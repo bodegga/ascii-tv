@@ -41,6 +41,7 @@ Paths and options:
 | `?cols=N&rows=N` | centre the picture, and pick the sharpest version of the movie that fits |
 | `?style=ascii` | classic text characters instead of HD colour pixels |
 | `?color=0` | black and white |
+| `?color=256` | 256-colour palette, for terminals without 24-bit colour (macOS Terminal before macOS 26, PuTTY, tmux without `Tc`) |
 | `?bar=0` | hide the progress bar |
 | `?loop` | play forever |
 | `?format=plain` | no escape codes; frames separated by form feeds (`\f`). The web player uses this. |
@@ -61,7 +62,7 @@ Stop with <kbd>Ctrl</kbd>+<kbd>C</kbd>. If your cursor stays hidden afterwards, 
 
 **New**
 
-- **HD colour.** Films can ship an HD rendition built from `▀` half-blocks in 256 colours: two pixels per character cell, so it looks like video, and it works in any modern terminal. There's also a colour-text style, and `?color=0` for the 1990s look. Use `curl --compressed` for HD: it uses about 6× less data.
+- **HD colour.** Films can ship an HD rendition built from `▀` half-blocks in 24-bit colour: two pixels per character cell, so it looks like video, and it works in any modern terminal. The colour-text style tints each cell with the picture and lays ASCII on top, so it reads as a picture from a distance and as text up close. `?color=256` converts on the fly for older terminals, and `?color=0` gives the 1990s look. Use `curl --compressed`: it uses about 6× less data.
 - **Web player.** Works on phones, with keyboard controls (Space, ←/→, F, C, +/−), seeking, text size, full screen, and `prefers-reduced-motion` support. It uses the same stream as curl.
 - **Subtitles.** There's no audio, so the converter burns subtitles into the bottom rows. The web player mirrors them into a screen-reader live region and can toggle them.
 - **More than one movie.** A JSON catalogue, plus private titles unlocked with a screening key (`Authorization: Bearer …`). Private titles are invisible without the key, and 404 exactly like missing ones.
@@ -109,16 +110,19 @@ Flags:
 You need ffmpeg and Python 3 with numpy (`winget install Gyan.FFmpeg`, `pip install numpy`).
 
 ```sh
-python tools/convert.py input.mkv movies/mymovie-80.atv    --color --width 80 --max-rows 23 --subs auto
-python tools/convert.py input.mkv movies/mymovie-hd80.atv  --style hd --width 80  --max-rows 23 --subs auto
-python tools/convert.py input.mkv movies/mymovie-hd160.atv --style hd --width 160 --max-rows 48 --subs auto
+python tools/convert.py input.mkv movies/mymovie-txt80.atv  --color --color-bits 4 --width 80  --max-rows 23 --subs auto
+python tools/convert.py input.mkv movies/mymovie-txt160.atv --color --color-bits 4 --width 160 --max-rows 48 --subs auto
+python tools/convert.py input.mkv movies/mymovie-hd80.atv   --style hd --color-bits 4 --width 80  --max-rows 23 --subs auto
+python tools/convert.py input.mkv movies/mymovie-hd160.atv  --style hd --color-bits 4 --width 160 --max-rows 48 --subs auto
 ```
 
 The converter crops letterbox bars, corrects for tall terminal characters, smooths contrast
 over time, maps brightness to a 16-step ASCII ramp, burns in subtitles (`--subs auto` reads
 the video's own text track; `--subs file.srt` also works), and merges identical frames. It
 prints the catalogue entry to add. Useful flags: `--ramp classic|film|fine`, `--invert` for
-light terminals, and `--start/--duration` to try a short clip first.
+light terminals, `--start/--duration` to try a short clip first, and `--color-bits 3|4|5` to
+trade colour precision against file size (4 is indistinguishable in practice: about 13 MB per
+minute for HD at 160 columns). `--palette 256` writes the old 256-colour format.
 
 Then add it to a catalogue (paths are relative to the catalogue file):
 
@@ -128,9 +132,10 @@ Then add it to a catalogue (paths are relative to the catalogue file):
     "slug": "mymovie", "title": "My Movie", "year": "2024",
     "credit": "Who made it", "captionLines": 2, "private": true,
     "renditions": [
-      { "file": "mymovie-80.atv",    "height": 23 },
-      { "file": "mymovie-hd80.atv",  "height": 23 },
-      { "file": "mymovie-hd160.atv", "height": 48 }
+      { "file": "mymovie-txt80.atv",  "height": 23 },
+      { "file": "mymovie-txt160.atv", "height": 48 },
+      { "file": "mymovie-hd80.atv",   "height": 23 },
+      { "file": "mymovie-hd160.atv",  "height": 48 }
     ]
   }]
 }

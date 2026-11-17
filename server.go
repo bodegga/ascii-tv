@@ -286,10 +286,11 @@ func (s *server) writeMenu(w http.ResponseWriter, r *http.Request) {
                           bash/zsh:   curl -s "%[1]s/starwars?cols=$COLUMNS&rows=$LINES"
     style=ascii         classic text characters instead of HD colour pixels
     color=0             black and white
+    color=256           for older terminals with odd colours (macOS Terminal before macOS 26, PuTTY)
     bar=0               hide the progress bar
     loop                play forever
 
-  TIP  add --compressed for HD:  curl --compressed -sN %[1]s/starwars  (uses ~6x less data)
+  TIP  add --compressed for colour films:  curl --compressed -sN %[1]s/<movie>  (uses ~6x less data)
 
   Windows PowerShell: type curl.exe (not curl).   Stop with Ctrl+C.
   Cursor gone after stopping? Type  tput cnorm  (macOS/Linux) or open a new tab.
@@ -366,6 +367,7 @@ type playOpts struct {
 	loop  bool
 	plain bool   // web player: frames separated by \f
 	color bool   // keep ANSI colour (terminal default on; web asks with color=1)
+	c256  bool   // convert 24-bit colour to the 256-colour palette (old terminals)
 	style string // "hd", "ascii" or "" (movie default)
 }
 
@@ -389,6 +391,8 @@ func parseOpts(r *http.Request) playOpts {
 		o.color = false
 	case "1", "true", "on", "yes":
 		o.color = true
+	case "256":
+		o.color, o.c256 = true, true
 	default:
 		o.color = !o.plain
 	}
@@ -556,6 +560,8 @@ func (s *server) play(ctx context.Context, w http.ResponseWriter, gz *gzip.Write
 				}
 				if rend.Color && !o.color {
 					lines = stripANSI(lines)
+				} else if rend.Color && o.c256 {
+					lines = to256(lines)
 				}
 				frame.Reset()
 				elapsed := rend.StartTick(i)

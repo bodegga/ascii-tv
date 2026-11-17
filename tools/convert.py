@@ -17,6 +17,7 @@ Requires ffmpeg/ffprobe on PATH and numpy (pip install numpy).
 from __future__ import annotations
 
 import argparse
+import os
 import html
 import json
 import re
@@ -349,6 +350,82 @@ def render_color_ascii(rgb: np.ndarray, tone, stretch: Stretch) -> list[bytes]:
     return rows
 
 
+# ---- 24-bit colour --------------------------------------------------------------
+#
+# True colour looks far better than the 256-colour cube (skin tones, skies and
+# shadows don't band or collapse to grey). Channels are kept to 5 bits so
+# neighbouring cells share escapes and the packs compress well; the server can
+# still convert to 256 colours for old terminals (?color=256).
+
+def _lvl(q: int) -> int:
+    return q * 8 + (q >> 2)  # 0..31 -> 0..255
+
+
+def _tc_table(fmt: str) -> np.ndarray:
+    t = np.empty(32768, dtype=object)
+    for k in range(32768):
+        t[k] = fmt.format(_lvl(k >> 10), _lvl((k >> 5) & 31), _lvl(k & 31)).encode()
+    return t
+
+
+TC_FG = _tc_table("[38;2;{};{};{}m")
+TC_BG = _tc_table("[48;2;{};{};{}m")
+EMPTY = np.empty(1, dtype=object)
+EMPTY[0] = b""
+
+
+COLOR_BITS = 5  # per channel; overridable with --color-bits
+
+
+def _key15(px: np.ndarray, bits: int | None = None) -> np.ndarray:
+    drop = 8 - (bits or COLOR_BITS)
+    c = (np.clip(px, 0, 255).astype(np.int32) >> drop << drop) >> 3
+    return (c[..., 0] << 10) | (c[..., 1] << 5) | c[..., 2]
+
+
+def _tc_prefix(fg: np.ndarray, bg: np.ndarray, skip_fg: np.ndarray | None = None) -> np.ndarray:
+    """Escape prefix per cell: only the colours that changed since the cell before."""
+    fgc, bgc = _changes(fg), _changes(bg)
+    if skip_fg is not None:
+        fgc &= ~skip_fg
+    return np.where(fgc, TC_FG[fg], EMPTY[0]) + np.where(bgc, TC_BG[bg], EMPTY[0])
+
+
+def render_hd_tc(rgb: np.ndarray, stretch: Stretch) -> list[bytes]:
+    """Half-block pixels in 24-bit colour."""
+    key = _key15(stretch(rgb))
+    pre = _tc_prefix(key[0::2], key[1::2])
+    return [b"".join(p + UPPER_HALF for p in row) + RESET for row in pre]
+
+
+TEXT_BG = float(os.environ.get("ATV_TEXT_BG", "0.8"))       # cell tint, fraction of the colour
+TEXT_FG = tuple(float(v) for v in os.environ.get("ATV_TEXT_FG", "0.9,90").split(","))  # glyph gain, lift
+TEXT_RAMP = np.frombuffer(b" .:-=+*#%@", dtype=np.uint8)
+
+
+def render_text_tc(rgb: np.ndarray, stretch: Stretch) -> list[bytes]:
+    """Colour text: each cell is tinted with the picture's colour (background)
+    and carries a brighter character chosen by brightness, so the image reads
+    as a picture from a distance and as ASCII up close."""
+    px = stretch(rgb).astype(np.float32)
+    lum = px @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+    idx = np.minimum((lum * (len(TEXT_RAMP) / 256.0)).astype(np.int32), len(TEXT_RAMP) - 1)
+    chars = TEXT_RAMP[idx]
+    # Coarser colour steps for the glyphs: they're small, and fewer distinct
+    # colours means far fewer escape codes.
+    fg = _key15(np.clip(px * TEXT_FG[0] + TEXT_FG[1], 0, 255), min(COLOR_BITS, 4))
+    bg = _key15(px * TEXT_BG)
+    blank = chars == 32
+    # A space shows no glyph: carry the previous glyph colour over it.
+    pos = np.where(blank, 0, np.arange(fg.shape[1])[None, :])
+    fg = np.take_along_axis(fg, np.maximum.accumulate(pos, axis=1), axis=1)
+    pre = _tc_prefix(fg, bg)
+    rows = []
+    for r in range(chars.shape[0]):
+        rows.append(b"".join(p + c for p, c in zip(pre[r], CHARS[chars[r]])) + RESET)
+    return rows
+
+
 class PackWriter:
     """Writes the .atv format the server reads (see pack.go)."""
 
@@ -400,11 +477,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--style", choices=["ascii", "hd"], default="ascii",
                    help="ascii: characters (default). hd: colour half-block pixels, twice the vertical detail")
     p.add_argument("--color", action="store_true", help="colour the ascii style (hd is always colour)")
+    p.add_argument("--palette", choices=["24bit", "256"], default="24bit",
+                   help="colour depth (default 24bit; the server can down-convert to 256 per viewer)")
     p.add_argument("--pack", action="store_true",
                    help="write a compressed .atv pack (implied by a .atv output name); use it for colour")
+    p.add_argument("--color-bits", type=int, default=5, choices=[3, 4, 5],
+                   help="24bit only: bits per colour channel (default 5; fewer = smaller files)")
     p.add_argument("--quiet", action="store_true")
     a = p.parse_args(argv)
 
+    global COLOR_BITS
+    COLOR_BITS = a.color_bits
     if a.output.endswith(".atv"):
         a.pack = True
     color = a.color or a.style == "hd"
@@ -490,9 +573,9 @@ def main(argv: list[str] | None = None) -> int:
 
         for px in frames(a.input, vf, a.width, rows * py, a.start, a.duration, rgb=color):
             if a.style == "hd":
-                lines = render_hd(px, stretch)
+                lines = render_hd_tc(px, stretch) if a.palette == "24bit" else render_hd(px, stretch)
             elif color:
-                lines = render_color_ascii(px, tone, stretch)
+                lines = render_text_tc(px, stretch) if a.palette == "24bit" else render_color_ascii(px, tone, stretch)
             else:
                 lines = tone(px)
             if subs:

@@ -337,40 +337,5 @@ body.doc { font-size: 1.0625rem; }
 
 [hidden] { display: none !important; }
 
-/* Movie colours: the xterm 256-colour palette, used by colour text frames.
-   This is picture content, not UI chrome, so it is exempt from the
-   black-and-white rule. */
-.f0{color:#000000}.f1{color:#cd0000}.f2{color:#00cd00}.f3{color:#cdcd00}.f4{color:#0000ee}.f5{color:#cd00cd}.f6{color:#00cdcd}.f7{color:#e5e5e5}
-.f8{color:#7f7f7f}.f9{color:#ff0000}.f10{color:#00ff00}.f11{color:#ffff00}.f12{color:#5c5cff}.f13{color:#ff00ff}.f14{color:#00ffff}.f15{color:#ffffff}
-.f16{color:#000000}.f17{color:#00005f}.f18{color:#000087}.f19{color:#0000af}.f20{color:#0000d7}.f21{color:#0000ff}.f22{color:#005f00}.f23{color:#005f5f}
-.f24{color:#005f87}.f25{color:#005faf}.f26{color:#005fd7}.f27{color:#005fff}.f28{color:#008700}.f29{color:#00875f}.f30{color:#008787}.f31{color:#0087af}
-.f32{color:#0087d7}.f33{color:#0087ff}.f34{color:#00af00}.f35{color:#00af5f}.f36{color:#00af87}.f37{color:#00afaf}.f38{color:#00afd7}.f39{color:#00afff}
-.f40{color:#00d700}.f41{color:#00d75f}.f42{color:#00d787}.f43{color:#00d7af}.f44{color:#00d7d7}.f45{color:#00d7ff}.f46{color:#00ff00}.f47{color:#00ff5f}
-.f48{color:#00ff87}.f49{color:#00ffaf}.f50{color:#00ffd7}.f51{color:#00ffff}.f52{color:#5f0000}.f53{color:#5f005f}.f54{color:#5f0087}.f55{color:#5f00af}
-.f56{color:#5f00d7}.f57{color:#5f00ff}.f58{color:#5f5f00}.f59{color:#5f5f5f}.f60{color:#5f5f87}.f61{color:#5f5faf}.f62{color:#5f5fd7}.f63{color:#5f5fff}
-.f64{color:#5f8700}.f65{color:#5f875f}.f66{color:#5f8787}.f67{color:#5f87af}.f68{color:#5f87d7}.f69{color:#5f87ff}.f70{color:#5faf00}.f71{color:#5faf5f}
-.f72{color:#5faf87}.f73{color:#5fafaf}.f74{color:#5fafd7}.f75{color:#5fafff}.f76{color:#5fd700}.f77{color:#5fd75f}.f78{color:#5fd787}.f79{color:#5fd7af}
-.f80{color:#5fd7d7}.f81{color:#5fd7ff}.f82{color:#5fff00}.f83{color:#5fff5f}.f84{color:#5fff87}.f85{color:#5fffaf}.f86{color:#5fffd7}.f87{color:#5fffff}
-.f88{color:#870000}.f89{color:#87005f}.f90{color:#870087}.f91{color:#8700af}.f92{color:#8700d7}.f93{color:#8700ff}.f94{color:#875f00}.f95{color:#875f5f}
-.f96{color:#875f87}.f97{color:#875faf}.f98{color:#875fd7}.f99{color:#875fff}.f100{color:#878700}.f101{color:#87875f}.f102{color:#878787}.f103{color:#8787af}
-.f104{color:#8787d7}.f105{color:#8787ff}.f106{color:#87af00}.f107{color:#87af5f}.f108{color:#87af87}.f109{color:#87afaf}.f110{color:#87afd7}.f111{color:#87afff}
-.f112{color:#87d700}.f113{color:#87d75f}.f114{color:#87d787}.f115{color:#87d7af}.f116{color:#87d7d7}.f117{color:#87d7ff}.f118{color:#87ff00}.f119{color:#87ff5f}
-.f120{color:#87ff87}.f121{color:#87ffaf}.f122{color:#87ffd7}.f123{color:#87ffff}.f124{color:#af0000}.f125{color:#af005f}.f126{color:#af0087}.f127{color:#af00af}
-.f128{color:#af00d7}.f129{color:#af00ff}.f130{color:#af5f00}.f131{color:#af5f5f}.f132{color:#af5f87}.f133{color:#af5faf}.f134{color:#af5fd7}.f135{color:#af5fff}
-.f136{color:#af8700}.f137{color:#af875f}.f138{color:#af8787}.f139{color:#af87af}.f140{color:#af87d7}.f141{color:#af87ff}.f142{color:#afaf00}.f143{color:#afaf5f}
-.f144{color:#afaf87}.f145{color:#afafaf}.f146{color:#afafd7}.f147{color:#afafff}.f148{color:#afd700}.f149{color:#afd75f}.f150{color:#afd787}.f151{color:#afd7af}
-.f152{color:#afd7d7}.f153{color:#afd7ff}.f154{color:#afff00}.f155{color:#afff5f}.f156{color:#afff87}.f157{color:#afffaf}.f158{color:#afffd7}.f159{color:#afffff}
-.f160{color:#d70000}.f161{color:#d7005f}.f162{color:#d70087}.f163{color:#d700af}.f164{color:#d700d7}.f165{color:#d700ff}.f166{color:#d75f00}.f167{color:#d75f5f}
-.f168{color:#d75f87}.f169{color:#d75faf}.f170{color:#d75fd7}.f171{color:#d75fff}.f172{color:#d78700}.f173{color:#d7875f}.f174{color:#d78787}.f175{color:#d787af}
-.f176{color:#d787d7}.f177{color:#d787ff}.f178{color:#d7af00}.f179{color:#d7af5f}.f180{color:#d7af87}.f181{color:#d7afaf}.f182{color:#d7afd7}.f183{color:#d7afff}
-.f184{color:#d7d700}.f185{color:#d7d75f}.f186{color:#d7d787}.f187{color:#d7d7af}.f188{color:#d7d7d7}.f189{color:#d7d7ff}.f190{color:#d7ff00}.f191{color:#d7ff5f}
-.f192{color:#d7ff87}.f193{color:#d7ffaf}.f194{color:#d7ffd7}.f195{color:#d7ffff}.f196{color:#ff0000}.f197{color:#ff005f}.f198{color:#ff0087}.f199{color:#ff00af}
-.f200{color:#ff00d7}.f201{color:#ff00ff}.f202{color:#ff5f00}.f203{color:#ff5f5f}.f204{color:#ff5f87}.f205{color:#ff5faf}.f206{color:#ff5fd7}.f207{color:#ff5fff}
-.f208{color:#ff8700}.f209{color:#ff875f}.f210{color:#ff8787}.f211{color:#ff87af}.f212{color:#ff87d7}.f213{color:#ff87ff}.f214{color:#ffaf00}.f215{color:#ffaf5f}
-.f216{color:#ffaf87}.f217{color:#ffafaf}.f218{color:#ffafd7}.f219{color:#ffafff}.f220{color:#ffd700}.f221{color:#ffd75f}.f222{color:#ffd787}.f223{color:#ffd7af}
-.f224{color:#ffd7d7}.f225{color:#ffd7ff}.f226{color:#ffff00}.f227{color:#ffff5f}.f228{color:#ffff87}.f229{color:#ffffaf}.f230{color:#ffffd7}.f231{color:#ffffff}
-.f232{color:#080808}.f233{color:#121212}.f234{color:#1c1c1c}.f235{color:#262626}.f236{color:#303030}.f237{color:#3a3a3a}.f238{color:#444444}.f239{color:#4e4e4e}
-.f240{color:#585858}.f241{color:#626262}.f242{color:#6c6c6c}.f243{color:#767676}.f244{color:#808080}.f245{color:#8a8a8a}.f246{color:#949494}.f247{color:#9e9e9e}
-.f248{color:#a8a8a8}.f249{color:#b2b2b2}.f250{color:#bcbcbc}.f251{color:#c6c6c6}.f252{color:#d0d0d0}.f253{color:#dadada}.f254{color:#e4e4e4}.f255{color:#eeeeee}
 
 .screen canvas.hd { display: block; max-width: 100%; image-rendering: auto; }

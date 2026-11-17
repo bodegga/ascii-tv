@@ -3,7 +3,7 @@
 # bodegga.net) at https://tv.bodegga.net.
 #
 #   ./scripts/deploy.sh            # binary + config (fast)
-#   ./scripts/deploy.sh --movies   # also upload movies/ (private screenings, ~1.4 GB)
+#   ./scripts/deploy.sh --movies   # also upload movies/ (private screenings, several GB)
 #
 # Needs: the Bodegga deploy key (../MainWebsite/.secrets/bodegga_deploy_key or
 # $DEPLOY_KEY), and either Go or Docker to cross-compile. DNS for
@@ -40,6 +40,19 @@ tar czf - dist/ascii-tv-linux-amd64 resources/catalog.json resources/sw1.txt dep
 if [ "$UPLOAD_MOVIES" = 1 ]; then
   echo "==> Uploading private movies (compressed stream; this takes a few minutes)"
   [ -f movies/catalog.private.json ] || { echo "movies/catalog.private.json missing" >&2; exit 1; }
+  # The Droplet's disk can't always hold the old and new sets at once. If not,
+  # drop the old set first (private titles are unavailable during the upload).
+  NEED=$(( $(cat movies/*.atv movies/*.txt 2>/dev/null | wc -c) + 512*1024*1024 ))
+  "${SSH[@]}" NEED="$NEED" 'bash -s' <<'SPACE'
+AVAIL=$(df --output=avail -B1 /var/lib/ascii-tv | tail -1)
+if [ "$AVAIL" -lt "$NEED" ]; then
+  echo "  not enough room for both sets ($((AVAIL>>20)) MB free, $((NEED>>20)) MB needed): removing the old set first"
+  systemctl stop ascii-tv
+  find /var/lib/ascii-tv/movies -maxdepth 1 \( -name '*.atv' -o -name '*.txt' \) -delete
+  echo '{"movies":[]}' > /var/lib/ascii-tv/movies/catalog.private.json
+  systemctl start ascii-tv
+fi
+SPACE
   # List files explicitly: --exclude='.*' would also exclude "." itself.
   (cd movies && tar cf - catalog.private.json $(ls *.txt *.atv 2>/dev/null)) |
     "${SSH[@]}" 'rm -rf /var/lib/ascii-tv/movies.new && mkdir -p /var/lib/ascii-tv/movies.new && tar xf - -C /var/lib/ascii-tv/movies.new &&

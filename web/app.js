@@ -46,9 +46,11 @@
 
 
   // ---- colour --------------------------------------------------------------
-  // Frames carry 256-colour ANSI. HD frames are upper-half blocks: each cell is
-  // two pixels (fg on top, bg below) and render to a canvas. Colour text frames
-  // render as spans with .f<n> classes (inline styles are blocked by our CSP).
+  // Frames carry ANSI colour: 24-bit (38;2;r;g;b) or the 256-colour palette.
+  // HD frames are upper-half blocks: each cell is two pixels (fg on top, bg
+  // below). Colour text frames are tinted cells with a character on top. Both
+  // draw to a canvas (our CSP blocks inline colour styles, and it's faster).
+  // Black-and-white frames stay as real text in the <pre>.
 
   const PALETTE = (() => {
     const p = [[0,0,0],[205,0,0],[0,205,0],[205,205,0],[0,0,238],[205,0,205],[0,205,205],[229,229,229],
@@ -60,21 +62,27 @@
   })();
   const SGR = /\x1b\[([0-9;]*)m/g;
   const stripAnsi = (s) => s.replace(SGR, '');
+  const BLACK = [0, 0, 0], GREY = [200, 200, 200];
 
-  // Parse one line into runs of {text, fg, bg} (fg/bg are palette indexes or -1).
+  // Parse one line into runs of {text, fg, bg}; colours are [r,g,b] or null.
   function runs(line) {
     const out = [];
-    let fg = -1, bg = -1, last = 0, m;
+    let fg = null, bg = null, last = 0, m;
     SGR.lastIndex = 0;
     while ((m = SGR.exec(line))) {
       if (m.index > last) out.push({ text: line.slice(last, m.index), fg, bg });
       const p = m[1] === '' ? [0] : m[1].split(';').map(Number);
       for (let i = 0; i < p.length; i++) {
-        if (p[i] === 0) { fg = -1; bg = -1; }
-        else if (p[i] === 38 && p[i + 1] === 5) { fg = p[i + 2]; i += 2; }
-        else if (p[i] === 48 && p[i + 1] === 5) { bg = p[i + 2]; i += 2; }
-        else if (p[i] === 39) fg = -1;
-        else if (p[i] === 49) bg = -1;
+        const c = p[i];
+        if (c === 0) { fg = null; bg = null; }
+        else if ((c === 38 || c === 48) && p[i + 1] === 2) {
+          const rgb = [p[i + 2], p[i + 3], p[i + 4]]; i += 4;
+          if (c === 38) fg = rgb; else bg = rgb;
+        } else if ((c === 38 || c === 48) && p[i + 1] === 5) {
+          const rgb = PALETTE[p[i + 2]] || BLACK; i += 2;
+          if (c === 38) fg = rgb; else bg = rgb;
+        } else if (c === 39) fg = null;
+        else if (c === 49) bg = null;
       }
       last = SGR.lastIndex;
     }
@@ -90,22 +98,27 @@
   const ctx2d = canvas.getContext('2d', { alpha: false });
   let image = null;
 
+  function sizeCanvas(w, h) {
+    if (canvas.width === w && canvas.height === h) return false;
+    canvas.width = w; canvas.height = h;
+    return true;
+  }
+
   function paintHD(lines, w) {
     const h = lines.length * 2;
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w; canvas.height = h;
+    if (sizeCanvas(w, h) || !image || image.width !== w || image.height !== h) {
       image = ctx2d.createImageData(w, h);
+      fit();
     }
     const d = image.data;
     d.fill(0);
     for (let y = 0; y < lines.length; y++) {
       let x = 0;
       for (const r of runs(lines[y])) {
+        const b = r.bg || BLACK;
         for (const ch of r.text) {
           if (x >= w) break;
-          const top = ch === '▀' ? r.fg : r.bg;
-          const bot = r.bg;
-          const t = PALETTE[top < 0 ? 0 : top], b = PALETTE[bot < 0 ? 0 : bot];
+          const t = ch === '▀' ? (r.fg || BLACK) : b;
           let i = ((y * 2) * w + x) * 4;
           d[i] = t[0]; d[i + 1] = t[1]; d[i + 2] = t[2]; d[i + 3] = 255;
           i += w * 4;
@@ -118,20 +131,53 @@
     ctx2d.putImageData(image, 0, 0);
   }
 
-  const escHTML = (s) => s.replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
-  function paintText(lines) {
-    if (!lines.some((l) => l.includes('\x1b'))) { el.frame.textContent = lines.join('\n'); return; }
-    let html = '';
-    for (const line of lines) {
-      for (const r of runs(line)) html += r.fg < 0 ? escHTML(r.text) : `<span class="f${r.fg}">${escHTML(r.text)}</span>`;
-      html += '\n';
+  // Colour text: cells of CW x CH canvas pixels (a terminal's 1:2 shape).
+  const CW = 10, CH = 20;
+  const FONT = (() => {
+    const fam = getComputedStyle(el.frame).fontFamily || 'monospace';
+    ctx2d.font = `100px ${fam}`;
+    const adv = ctx2d.measureText('M'.repeat(10)).width / 10 || 60;
+    return `bold ${(100 * CW / adv).toFixed(2)}px ${fam}`;
+  })();
+  const css = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
+
+  function paintCells(lines, w) {
+    if (sizeCanvas(w * CW, lines.length * CH)) fit();
+    ctx2d.fillStyle = '#000';
+    ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+    ctx2d.font = FONT;
+    ctx2d.textBaseline = 'middle';
+    for (let y = 0; y < lines.length; y++) {
+      const ty = y * CH + CH / 2 + 1;
+      let x = 0;
+      for (const r of runs(lines[y])) {
+        const n = [...r.text].length;
+        if (r.bg) { ctx2d.fillStyle = css(r.bg); ctx2d.fillRect(x * CW, y * CH, n * CW, CH); }
+        if (r.text.trim()) {
+          ctx2d.fillStyle = css(r.fg || GREY);
+          // One call per run; glyph advance is sized to exactly one cell.
+          ctx2d.fillText(r.text, x * CW, ty, n * CW);
+        }
+        x += n;
+      }
     }
-    el.frame.innerHTML = html;
   }
 
-  function setMode(hd) {
-    canvas.hidden = !hd;
-    el.frame.hidden = hd;
+  function paintText(lines) {
+    if (!lines.some((l) => l.includes('\x1b'))) {
+      setMode(false);
+      el.frame.textContent = lines.join('\n');
+      return;
+    }
+    setMode(true);
+    paintCells(lines, frameW);
+  }
+
+  function setMode(onCanvas) {
+    if (canvas.hidden === !onCanvas) return;
+    canvas.hidden = !onCanvas;
+    el.frame.hidden = onCanvas;
+    fit();
   }
 
   // ---- fitting the picture -------------------------------------------------
@@ -156,13 +202,14 @@
     size = Math.min(size, availH / (rows * 1.15));
     size = Math.max(4, Math.min(size * scale, 48));
     el.frame.style.fontSize = size.toFixed(2) + 'px';
-    // HD canvas: square pixels, fit width (and height in full screen).
-    if (frameStyle === 'hd' && frameW) {
-      const ph = frameH * 2 - ((current?.captionLines || 0) * 2);
+    // Canvas (HD or colour text): keep its shape, fit width (and height in
+    // full screen).
+    if (!canvas.hidden && canvas.width) {
+      const aspect = canvas.height / canvas.width;
       let cw = availW * Math.min(scale, 1);
-      if (availH !== Infinity) cw = Math.min(cw, availH * frameW / ph);
+      if (availH !== Infinity) cw = Math.min(cw, availH / aspect);
       canvas.style.width = cw.toFixed(0) + 'px';
-      canvas.style.height = (cw * ph / frameW).toFixed(0) + 'px';
+      canvas.style.height = (cw * aspect).toFixed(0) + 'px';
     }
   }
   new ResizeObserver(fit).observe(el.screen);
@@ -234,7 +281,7 @@
     positionMs = parseInt(msStr, 10) || 0;
     if (fStyle && (fStyle !== frameStyle || +fW !== frameW || +fH !== frameH)) {
       frameStyle = fStyle; frameW = +fW; frameH = +fH;
-      setMode(frameStyle === 'hd');
+      if (frameStyle === 'hd') setMode(true);
       fit();
     }
 
@@ -249,10 +296,11 @@
     }
     const capN = m && m.captionLines ? m.captionLines : 0;
     const hd = frameStyle === 'hd';
+    const onCanvas = hd || lines.some((l) => l.includes(''));
     if (capN) {
       const cap = lines.slice(-capN).map((l) => stripAnsi(l).trim()).filter(Boolean).join(' ');
-      // HD pictures can't hold text, so captions always show below them.
-      if (!captionsOn || hd) lines = lines.slice(0, -capN);
+      // Canvas pictures (HD, colour text) show captions below, at a readable size.
+      if (!captionsOn || onCanvas) lines = lines.slice(0, -capN);
       if (cap !== lastCaption) {
         lastCaption = cap;
         el.captions.textContent = captionsOn ? cap : '';
