@@ -40,7 +40,8 @@ tar czf - dist/ascii-tv-linux-amd64 resources/catalog.json resources/sw1.txt dep
 if [ "$UPLOAD_MOVIES" = 1 ]; then
   echo "==> Uploading private movies (compressed stream; this takes a few minutes)"
   [ -f movies/catalog.private.json ] || { echo "movies/catalog.private.json missing" >&2; exit 1; }
-  tar czf - -C movies --exclude='.*' . |
+  # List files explicitly: --exclude='.*' would also exclude "." itself.
+  (cd movies && tar czf - catalog.private.json $(ls *.txt)) |
     "${SSH[@]}" 'mkdir -p /var/lib/ascii-tv/movies.new && tar xzf - -C /var/lib/ascii-tv/movies.new &&
                  rm -rf /var/lib/ascii-tv/movies.old && { [ -d /var/lib/ascii-tv/movies ] && mv /var/lib/ascii-tv/movies /var/lib/ascii-tv/movies.old || true; } &&
                  mv /var/lib/ascii-tv/movies.new /var/lib/ascii-tv/movies && rm -rf /var/lib/ascii-tv/movies.old'

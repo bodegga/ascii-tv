@@ -53,6 +53,7 @@
 
       <p class="captions" id="captions" aria-live="polite" aria-atomic="true"></p>
       <p class="now" id="now-title"><span id="now">Star Wars</span> <span class="credit" id="credit"></span></p>
+      <p class="unlock-line"><a href="#keyform" id="unlock">Have a private screening key?</a></p>
       <p class="keys">Keys: <kbd>Space</kbd> play or pause, <kbd>&larr;</kbd> <kbd>&rarr;</kbd> skip 10 seconds, <kbd>F</kbd> full screen, <kbd>C</kbd> captions, <kbd>+</kbd> <kbd>&minus;</kbd> text size.</p>
     </section>
 
@@ -138,7 +139,7 @@
       </table>
       <p>See the full list from your terminal with <code>curl {{HOST}}/ls</code>.</p>
 
-      <details class="keybox">
+      <details class="keybox" id="keybox">
         <summary>Have a private screening key?</summary>
         <p>Private titles only show up with a key. The key is kept in this browser, and is only sent to {{HOST}} when you play something.</p>
         <form id="keyform" class="keyform">

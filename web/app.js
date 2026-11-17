@@ -174,8 +174,13 @@
     lastCaption = '';
     store.set('last', slug);
     updateCommands(live ? 'live' : slug);
+    positionMs = 0;
+    el.seek.value = '0';
+    el.seek.max = String(m.seconds || 0);
+    el.clock.textContent = live ? 'Live' : `00:00 / ${fmt(m.seconds || 0)}`;
     fit();
-    if (autoplay) start(0); else { stop(); showMessage('Press play.'); }
+    if (autoplay) start(0); else { stop(); showMessage(`Press play to watch
+${live ? 'the live channel' : m.title}.`); }
   }
 
   function updateCommands(slug) {
@@ -315,6 +320,13 @@
   // ---- private screening key ------------------------------------------------
 
   const keyStatus = $('keystatus');
+  $('unlock').addEventListener('click', (e) => {
+    e.preventDefault();
+    const box = document.querySelector('.keybox');
+    box.open = true;
+    box.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+    $('key').focus({ preventScroll: true });
+  });
   $('keyform').addEventListener('submit', async (e) => {
     e.preventDefault();
     const k = $('key').value.trim();
@@ -325,7 +337,9 @@
     if (movies.some((m) => m.private)) {
       keyStatus.textContent = `Unlocked ${movies.length - before} private title${movies.length - before === 1 ? '' : 's'}.`;
       renderListings();
-      choose(current?.slug || movies[0].slug, false);
+      const firstPrivate = movies.find((m) => m.private);
+      choose(firstPrivate ? firstPrivate.slug : movies[0].slug, false);
+      el.screen.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
     } else {
       store.set('key', null);
       keyStatus.textContent = 'That key did not unlock anything. Check it and try again.';
@@ -343,6 +357,14 @@
   // ---- boot ------------------------------------------------------------------
 
   (async () => {
+    // Private screening links look like /?key=XXXX&watch=officespace. Save the
+    // key in this browser and strip it from the address bar and history.
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('key')) {
+      store.set('key', qs.get('key'));
+      qs.delete('key');
+      history.replaceState(null, '', location.pathname + (qs.toString() ? '?' + qs : ''));
+    }
     updateCommands('starwars');
     const def = await loadMovies();
     if (!movies.length) { showMessage('The projector is off. Try again soon.'); return; }

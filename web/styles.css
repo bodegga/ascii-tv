@@ -205,6 +205,8 @@ button, select, input {
 
 .now { margin: 0.25rem 0 0; font-weight: 700; }
 .now .credit { font-weight: 400; color: var(--soft); }
+
+.unlock-line { margin: 0.35rem 0 0; font-size: 0.9375rem; }
 .keys { font-size: 0.875rem; color: var(--soft); margin-top: 0.25rem; }
 
 @media (hover: none) { .keys { display: none; } }
