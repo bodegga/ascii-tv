@@ -1,0 +1,7 @@
+# Movie files must keep LF endings or the frame parser sees "2\r" (the
+# server strips \r anyway, but keep the files canonical).
+resources/*.txt text eol=lf
+*.go text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+deploy/* text eol=lf

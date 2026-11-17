@@ -1,62 +1,170 @@
+// Command ascii-tv streams ASCII-art movies to terminals over plain HTTP:
+//
+//	curl -N tv.bodegga.net
+//
+// and to browsers through a small built-in web player.
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
-	"log"
+	"log/slog"
+	"net"
 	"net/http"
-	"strconv"
+	"os"
+	"os/signal"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
-type frame struct {
-	lines    []string
-	duration time.Duration
+type stringList []string
+
+func (s *stringList) String() string     { return strings.Join(*s, ",") }
+func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
+
+type config struct {
+	addr        string
+	catalogs    stringList
+	movie       string
+	height      int
+	title       string
+	publicURL   string
+	maxStreams  int
+	maxPerIP    int
+	trustProxy  bool
+	keys        []string
+	liveEpoch   time.Time
+	frameWriteT time.Duration
+}
+
+func parseConfig(args []string) (*config, error) {
+	fs := flag.NewFlagSet("ascii-tv", flag.ContinueOnError)
+	c := &config{}
+	fs.StringVar(&c.addr, "addr", "", "TCP address to listen on (default :$PORT, else :8080)")
+	fs.Var(&c.catalogs, "catalog", "catalog JSON file; repeat to merge several (default resources/catalog.json)")
+	fs.StringVar(&c.movie, "movie", "", "serve a single movie file instead of a catalog")
+	fs.IntVar(&c.height, "height", 13, "artwork lines per frame for -movie")
+	fs.StringVar(&c.title, "title", "", "title for -movie (default: file name)")
+	fs.StringVar(&c.publicURL, "public-url", "", "URL shown in help text (default: from the request's Host)")
+	fs.IntVar(&c.maxStreams, "max-streams", 200, "maximum concurrent streams")
+	fs.IntVar(&c.maxPerIP, "max-per-ip", 4, "maximum concurrent streams per client IP")
+	fs.BoolVar(&c.trustProxy, "trust-proxy", false, "trust X-Real-IP / X-Forwarded-Proto from a loopback reverse proxy")
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	if c.addr == "" {
+		if p := os.Getenv("PORT"); p != "" {
+			c.addr = ":" + p
+		} else {
+			c.addr = ":8080"
+		}
+	}
+	if c.movie == "" && len(c.catalogs) == 0 {
+		c.catalogs = stringList{"resources/catalog.json"}
+	}
+	for _, k := range strings.Split(os.Getenv("ASCII_TV_KEYS"), ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			c.keys = append(c.keys, k)
+		}
+	}
+	// The live channel's schedule is anchored to a fixed instant so every
+	// viewer (and every server restart) agrees on what is "on" right now.
+	c.liveEpoch = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	c.frameWriteT = 30 * time.Second
+	return c, nil
+}
+
+func loadCatalog(c *config, log *slog.Logger) (*Catalog, error) {
+	cat := newCatalog()
+	warn := func(s string) { log.Warn(s) }
+	if c.movie != "" {
+		r, w, err := OpenRendition(c.movie, c.height)
+		if err != nil {
+			return nil, err
+		}
+		if w != "" {
+			warn(w)
+		}
+		slug := strings.ToLower(strings.TrimSuffix(filepath.Base(c.movie), filepath.Ext(c.movie)))
+		slug = strings.Map(func(r rune) rune {
+			if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' {
+				return r
+			}
+			return '-'
+		}, slug)
+		title := c.title
+		if title == "" {
+			title = slug
+		}
+		if err := cat.Add(&Movie{Slug: slug, Title: title, Renditions: []*Rendition{r}}); err != nil {
+			return nil, err
+		}
+	}
+	for _, p := range c.catalogs {
+		if err := cat.LoadCatalogFile(p, warn); err != nil {
+			return nil, err
+		}
+	}
+	return cat, cat.Validate()
 }
 
 func main() {
-	moviePtr := flag.String("movie", "resources/sw1.txt", "path to ASCII movie file")
-	addrPtr := flag.String("addr", ":8080", "TCP address to listen on")
-	flag.Parse()
-	data, err := ioutil.ReadFile(*moviePtr)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	cfg, err := parseConfig(os.Args[1:])
 	if err != nil {
-		fmt.Printf("Failed to load file %s\n", *moviePtr)
+		os.Exit(2)
 	}
-	lines := strings.Split(string(data), "\n")
-	frameHeight := 13
-	var frames []frame
-	for i := range lines {
-		if i%(frameHeight+1) == 0 {
-			frameDurationStr := lines[i]
-			frameDurationInt, err := strconv.ParseInt(frameDurationStr, 0, 64)
-			if err != nil {
-				fmt.Printf("Failed to parse frame duration from line: %s", frameDurationStr)
-			}
-			frames = append(frames, frame{lines[i+1 : i+1+frameHeight], time.Duration(frameDurationInt)})
+	cat, err := loadCatalog(cfg, log)
+	if err != nil {
+		log.Error("cannot load movies", "err", err)
+		os.Exit(1)
+	}
+	defer cat.Close()
+	for _, m := range cat.Movies {
+		for _, r := range m.Renditions {
+			log.Info("loaded", "movie", m.Slug, "private", m.Private, "frames", r.Frames(),
+				"size", fmt.Sprintf("%dx%d", r.Width, r.Height), "runtime", m.Duration().Round(time.Second))
 		}
 	}
-	fmt.Printf("Extracted %d frames from %s\n", len(frames), *moviePtr)
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(strings.ToLower(r.Header.Get("User-Agent")), "curl") {
-			fmt.Fprintf(w, "Web browsers are so %d, use \"curl https://asciitv.fr\" from your terminal instead!\n", time.Now().Year()-1)
-			return
-		}
-		for _, frame := range frames {
-			// Clear terminal and move cursor to position (1,1)
-			fmt.Fprint(w, "\033[2J\033[1;1H")
-			for _, line := range frame.lines {
-				fmt.Fprintln(w, line)
-			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
-			time.Sleep(frame.duration * time.Second / 15)
-		}
-	})
+	// Cancelling baseCtx ends every running stream, so shutdown doesn't wait
+	// for a two-hour movie to finish.
+	baseCtx, cancelStreams := context.WithCancel(context.Background())
+	defer cancelStreams()
+	srv := newServer(cat, cfg, log)
+	hs := &http.Server{
+		Addr:              cfg.addr,
+		Handler:           srv.routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return baseCtx },
+		// No WriteTimeout: streams are long. Each frame write gets its own
+		// deadline instead (see play), which drops stuck clients.
+	}
 
-	fmt.Printf("Listening on %s\n", *addrPtr)
-	log.Fatal(http.ListenAndServe(*addrPtr, nil))
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	errc := make(chan error, 1)
+	go func() {
+		log.Info("listening", "addr", cfg.addr, "movies", len(cat.Movies), "default", cat.Default)
+		errc <- hs.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errc:
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Error("server failed", "err", err)
+			os.Exit(1)
+		}
+	case <-sigCtx.Done():
+		log.Info("shutting down")
+		cancelStreams()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = hs.Shutdown(ctx)
+	}
 }

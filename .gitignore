@@ -1,1 +1,10 @@
-ascii-tv
+/ascii-tv
+/ascii-tv.exe
+/dist/
+/movies/
+/work/
+__pycache__/
+.venv/
+*.pyc
+.remember/
+/.playwright-mcp/

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ascii-tv</title>
+  <meta name="description" content="Movies drawn in text. Watch in your browser, or type curl {{HOST}} in any terminal.">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2'/%3E%3Ctext x='8' y='12' font-family='monospace' font-size='10' fill='white' text-anchor='middle'%3E%3E_%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body data-host="{{HOST}}">
+  <a class="skip" href="#terminal">Skip to terminal instructions</a>
+
+  <header class="top">
+    <a class="brand" href="/" aria-label="ascii-tv home">ascii-tv</a>
+    <a class="parent" href="https://bodegga.net">by Bodegga</a>
+  </header>
+
+  <main>
+    <section class="player" aria-labelledby="now-title">
+      <h1 class="visually-hidden">ascii-tv: movies drawn in text</h1>
+      <div class="screen" id="screen">
+        <pre id="frame" role="img" aria-label="Animated text-art movie" aria-roledescription="text animation">
+
+
+              Loading the projector…
+        </pre>
+      </div>
+
+      <div class="controls" role="group" aria-label="Player controls">
+        <button type="button" id="play" class="btn-play" aria-label="Pause">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path class="i-pause" d="M4 2h3v12H4zM9 2h3v12H9z"/><path class="i-play" d="M4 2l10 6-10 6z"/></svg>
+        </button>
+        <label class="seek">
+          <span class="visually-hidden">Position</span>
+          <input type="range" id="seek" min="0" max="0" value="0" step="1">
+        </label>
+        <span class="clock" id="clock" aria-live="off">00:00 / 00:00</span>
+        <label class="pick">
+          <span class="visually-hidden">Movie</span>
+          <select id="movie"></select>
+        </label>
+        <button type="button" id="cc" class="btn-text" aria-pressed="true" hidden>CC</button>
+        <button type="button" id="smaller" class="btn-text" aria-label="Smaller text">A&minus;</button>
+        <button type="button" id="bigger" class="btn-text" aria-label="Larger text">A+</button>
+        <button type="button" id="full" class="btn-text" aria-label="Full screen">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 1h5v2H3v3H1zM10 1h5v5h-2V3h-3zM1 10h2v3h3v2H1zM13 10h2v5h-5v-2h3z"/></svg>
+        </button>
+      </div>
+
+      <p class="captions" id="captions" aria-live="polite" aria-atomic="true"></p>
+      <p class="now" id="now-title"><span id="now">Star Wars</span> <span class="credit" id="credit"></span></p>
+      <p class="keys">Keys: <kbd>Space</kbd> play or pause, <kbd>&larr;</kbd> <kbd>&rarr;</kbd> skip 10 seconds, <kbd>F</kbd> full screen, <kbd>C</kbd> captions, <kbd>+</kbd> <kbd>&minus;</kbd> text size.</p>
+    </section>
+
+    <section class="terminal" id="terminal" aria-labelledby="terminal-title">
+      <h2 id="terminal-title">Watch it in your terminal</h2>
+      <p>No app, no account. Every Mac, Linux machine and Windows 10 or 11 PC already has the one tool you need. Open a terminal, paste this, press Enter.</p>
+
+      <div class="cmd cmd-hero">
+        <code id="cmd-simple">curl {{HOST}}</code>
+        <button type="button" class="copy" data-copy="cmd-simple">Copy</button>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Your system">
+        <button type="button" role="tab" id="tab-win" aria-controls="os-win" aria-selected="false">Windows</button>
+        <button type="button" role="tab" id="tab-mac" aria-controls="os-mac" aria-selected="false">Mac</button>
+        <button type="button" role="tab" id="tab-linux" aria-controls="os-linux" aria-selected="false">Linux</button>
+        <button type="button" role="tab" id="tab-phone" aria-controls="os-phone" aria-selected="false">Phone or tablet</button>
+      </div>
+
+      <div class="panel" role="tabpanel" id="os-win" aria-labelledby="tab-win" hidden>
+        <ol class="steps">
+          <li>Press <kbd>Win</kbd>, type <strong>Terminal</strong> (or <strong>PowerShell</strong>), press Enter.</li>
+          <li>Paste a command and press Enter. In PowerShell the program is <code>curl.exe</code>, with the <code>.exe</code>.</li>
+        </ol>
+        <p class="cmd-label">Fit the picture to your window:</p>
+        <div class="cmd"><code id="cmd-win" data-template='curl.exe -sN "{{HOST}}/{slug}?cols=$($Host.UI.RawUI.WindowSize.Width)&amp;rows=$($Host.UI.RawUI.WindowSize.Height)"'></code><button type="button" class="copy" data-copy="cmd-win">Copy</button></div>
+        <p class="cmd-label">Using the older Command Prompt instead:</p>
+        <div class="cmd"><code id="cmd-cmd" data-template="curl -sN {{HOST}}/{slug}"></code><button type="button" class="copy" data-copy="cmd-cmd">Copy</button></div>
+      </div>
+
+      <div class="panel" role="tabpanel" id="os-mac" aria-labelledby="tab-mac" hidden>
+        <ol class="steps">
+          <li>Press <kbd>&#8984;</kbd> <kbd>Space</kbd>, type <strong>Terminal</strong>, press Enter.</li>
+          <li>Paste this and press Enter. It sizes the picture to your window.</li>
+        </ol>
+        <div class="cmd"><code id="cmd-mac" data-template='curl -sN "{{HOST}}/{slug}?cols=$(tput cols)&amp;rows=$(tput lines)"'></code><button type="button" class="copy" data-copy="cmd-mac">Copy</button></div>
+      </div>
+
+      <div class="panel" role="tabpanel" id="os-linux" aria-labelledby="tab-linux" hidden>
+        <ol class="steps">
+          <li>Open your terminal (<kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>T</kbd> on most desktops).</li>
+          <li>Paste this and press Enter. It sizes the picture to your window.</li>
+        </ol>
+        <div class="cmd"><code id="cmd-linux" data-template='curl -sN "{{HOST}}/{slug}?cols=$(tput cols)&amp;rows=$(tput lines)"'></code><button type="button" class="copy" data-copy="cmd-linux">Copy</button></div>
+        <p class="small">Prefer wget? <code>wget -qO- {{HOST}}</code> works too.</p>
+      </div>
+
+      <div class="panel" role="tabpanel" id="os-phone" aria-labelledby="tab-phone" hidden>
+        <p>The player at the top of this page works on phones. Turn your phone sideways for a bigger picture. If you want a real terminal:</p>
+        <ul class="steps">
+          <li><strong>Android:</strong> install Termux, run <code>pkg install curl</code> once, then the command below.</li>
+          <li><strong>iPhone and iPad:</strong> install a-Shell, then run the command below.</li>
+        </ul>
+        <div class="cmd"><code id="cmd-phone" data-template='curl -sN "{{HOST}}/{slug}?cols=$(tput cols)"'></code><button type="button" class="copy" data-copy="cmd-phone">Copy</button></div>
+      </div>
+
+      <p class="small">To stop, press <kbd>Ctrl</kbd> <kbd>C</kbd>. If your cursor disappears afterwards, type <code>tput cnorm</code> and press Enter, or open a new window.</p>
+    </section>
+
+    <section class="listings" aria-labelledby="listings-title">
+      <h2 id="listings-title">Now showing</h2>
+      <ul class="films" id="films">
+        <li class="film">
+          <span class="film-title">Star Wars: Episode IV</span>
+          <code>curl {{HOST}}/starwars</code>
+        </li>
+      </ul>
+      <p>Or tune in to <strong>live</strong>, a channel that runs around the clock. Everyone watching sees the same frame at the same moment, like broadcast TV: <code>curl {{HOST}}/live</code></p>
+    </section>
+
+    <section class="options" aria-labelledby="options-title">
+      <h2 id="options-title">Extras</h2>
+      <p>Add these after the movie name, for example <code>curl "{{HOST}}/starwars?t=5m&amp;bar=0"</code>. Use quotes when there is an <code>&amp;</code>.</p>
+      <table>
+        <caption class="visually-hidden">Playback options</caption>
+        <thead><tr><th scope="col">Add</th><th scope="col">What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>?t=12:30</code></td><td>Start 12 minutes 30 seconds in. <code>t=90</code> and <code>t=1h2m</code> work too.</td></tr>
+          <tr><td><code>?cols=…&amp;rows=…</code></td><td>Centre the picture and send the sharpest version that fits your window.</td></tr>
+          <tr><td><code>?bar=0</code></td><td>Hide the progress bar.</td></tr>
+          <tr><td><code>?loop</code></td><td>Play forever. Good for an office screen.</td></tr>
+        </tbody>
+      </table>
+      <p>See the full list from your terminal with <code>curl {{HOST}}/ls</code>.</p>
+
+      <details class="keybox">
+        <summary>Have a private screening key?</summary>
+        <p>Private titles only show up with a key. The key is kept in this browser, and is only sent to {{HOST}} when you play something.</p>
+        <form id="keyform" class="keyform">
+          <label for="key">Screening key</label>
+          <input id="key" name="key" type="password" autocomplete="off" spellcheck="false">
+          <button type="submit" class="btn-text">Unlock</button>
+          <button type="button" id="forget" class="btn-text">Forget key</button>
+        </form>
+        <p class="small">In a terminal, send it as a header: <code>curl -sN -H "Authorization: Bearer YOUR-KEY" {{HOST}}/ls</code></p>
+        <p class="small" id="keystatus" role="status"></p>
+      </details>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>The Star Wars ASCIImation was drawn by hand, frame by frame, by <a href="https://www.asciimation.co.nz/">Simon Jansen</a>. Original ascii-tv software by <a href="https://github.com/martinraison/ascii-tv">Martin Raison</a>, building on Martin W. Kirst's work, MIT licensed. Not affiliated with Lucasfilm or any rights holder.</p>
+    <p class="foot-links"><a href="/privacy">Privacy</a> <a href="/terms">Terms</a> <a href="https://bodegga.net">Bodegga</a></p>
+    <p class="small">Flashing images: this animation can flicker. Press Space to pause at any time. No cookies, no tracking.</p>
+  </footer>
+</body>
+</html>

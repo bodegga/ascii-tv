@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy · ascii-tv</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<!-- TODO(legal): confirm legal entity name and address -->
+<!-- TODO(legal): DRAFT for attorney review. This page is not legal advice and has not been reviewed by counsel. Review before publishing. -->
+<body class="doc">
+<header class="doc-head"><a class="back" href="/">← ascii-tv</a></header>
+
+<main class="doc-body">
+<h1>Privacy Policy</h1>
+
+<p class="lede">ascii-tv streams ASCII-art animations to your terminal or browser. It has no accounts, no cookies, no ads, no analytics and no third-party scripts. We keep short-lived server logs that contain a shortened (truncated) version of your IP address, never the full address, and we delete them within 14 days. We do not sell or share personal information. The details are below.</p>
+
+<nav aria-label="Contents">
+<h2>Contents</h2>
+<ol>
+<li><a href="#who-we-are">Who we are</a></li>
+<li><a href="#what-we-collect">What we collect</a></li>
+<li><a href="#what-we-do-not-do">What we do not do</a></li>
+<li><a href="#browser-storage">Settings stored in your browser</a></li>
+<li><a href="#access-keys">Access keys</a></li>
+<li><a href="#how-we-use">How we use information, and why</a></li>
+<li><a href="#retention">How long we keep it</a></li>
+<li><a href="#providers">Infrastructure providers</a></li>
+<li><a href="#disclosure">When we disclose information</a></li>
+<li><a href="#security">Security</a></li>
+<li><a href="#children">Children and content</a></li>
+<li><a href="#your-rights">Your privacy rights</a></li>
+<li><a href="#international">Where data is processed</a></li>
+<li><a href="#changes">Changes to this policy</a></li>
+<li><a href="#contact">Contact</a></li>
+</ol>
+</nav>
+
+<section id="who-we-are">
+<h2>1. Who we are</h2>
+<p>ascii-tv (the "Service") is operated by Bodegga ("Bodegga", "we", "us"), a small security company. Our website is <a href="https://bodegga.net">bodegga.net</a>. The Service lives at <a href="https://tv.bodegga.net">https://tv.bodegga.net</a> and also answers on plain <code>http://</code> so that terminal clients such as <code>curl</code> can use it.</p>
+<p>This policy covers the hosted Service only, not copies of the open-source software that other people run.</p>
+</section>
+
+<section id="what-we-collect">
+<h2>2. What we collect</h2>
+<p>We designed the Service to work with as little data as possible. This is everything we handle.</p>
+
+<h3>Stream logs</h3>
+<p>When a stream starts and when it ends, the server writes a log line to the system journal on our server. It contains:</p>
+<ul>
+<li>the name of the movie requested;</li>
+<li>a <strong>truncated</strong> client network: the first three parts of an IPv4 address (a /24 network) or the first 48 bits of an IPv6 address (a /48 network), never the full address;</li>
+<li>the terminal size your client requested;</li>
+<li>how long the stream ran; and</li>
+<li>the time of the event.</li>
+</ul>
+
+<h3>Your full IP address, in memory only</h3>
+<p>Any server on the internet has to see your IP address in order to reply to you. While your stream is open, the ascii-tv application holds your full IP address in memory so it can limit the number of simultaneous streams per address. This is an abuse-prevention measure. The application discards the address when the stream ends and does not write it to disk.</p>
+
+<h3>Web server access logs</h3>
+<!-- TODO(legal): before publishing, confirm with the operator that the nginx access log for this site is actually configured as described here (truncated IPs, no query strings, 14-day rotation and deletion), that journald retention is capped at 14 days, and that no other component (error logs, firewall, host-level tooling) records full client IP addresses. -->
+<p>A reverse proxy (nginx) sits in front of the application. Its access logs for this site, if any are kept, contain a truncated IP address, the request path (without the query string), the user-agent string your client sent, a timestamp and the response status.</p>
+
+<h3>Email you send us</h3>
+<p>If you email us, we receive your email address and whatever you choose to write. We use it to answer you and to handle your request.</p>
+
+<p>We do not obtain information about visitors from any other source.</p>
+</section>
+
+<section id="what-we-do-not-do">
+<h2>3. What we do not do</h2>
+<ul>
+<li>No accounts, sign-up, profiles or payments.</li>
+<li>No cookies.</li>
+<li>No analytics, tracking pixels, advertising or device fingerprinting.</li>
+<li>No third-party scripts, fonts, embeds or content delivery networks. The web player is served entirely from our own server.</li>
+<li>No selling of personal information, and no sharing of it for cross-context behavioral advertising.</li>
+<li>No use of your data to train artificial intelligence or machine-learning models.</li>
+<li>No profiling and no automated decision-making that produces legal or similarly significant effects. The only automated control is a limit on simultaneous streams per IP address.</li>
+</ul>
+</section>
+
+<section id="browser-storage">
+<h2>4. Settings stored in your browser</h2>
+<p>The web player may save convenience settings in your browser's <code>localStorage</code>: font size, the last movie you watched and, if you enter one, an access key. This data stays on your device. It is not sent to us, with one exception: an access key is sent to our server when you use it to play a private title.</p>
+<p>You can delete these settings at any time by clearing site data for <code>tv.bodegga.net</code> in your browser. Terminal clients store nothing on our behalf.</p>
+</section>
+
+<section id="access-keys">
+<h2>5. Access keys</h2>
+<!-- TODO(legal): confirm with the operator what record is kept of issued access keys (for example, who each key was given to) and whether any log line identifies which key was used. Adjust this section to match. -->
+<p>Some titles are private and play only with an access key that we give out individually. Our server holds the list of valid keys so it can check them, and we may keep a note of who we gave a key to so that we can manage and revoke it.</p>
+<p>A key can be sent in two ways: in the URL as <code>?key=…</code>, or in an <code>Authorization: Bearer</code> header. The application never logs query strings, so a key sent in the URL is not written to the application's logs. Even so, URLs tend to be saved in places we do not control, such as browser history, shell history and bookmarks. We recommend that you:</p>
+<ul>
+<li>send the key in the <code>Authorization</code> header where you can; and</li>
+<li>use <code>https://</code> whenever you use a key. Over plain <code>http://</code>, the key travels unencrypted and can be read by networks between you and us.</li>
+</ul>
+<p>Stream logs record the title watched. If a private title has been shared with only a few people, a log entry about it may be indirectly attributable to a key holder even though it contains only a truncated IP address.</p>
+</section>
+
+<section id="how-we-use">
+<h2>6. How we use information, and why</h2>
+<p>We use the information above only to:</p>
+<ul>
+<li>deliver the stream you asked for;</li>
+<li>keep the Service secure and available, including detecting, investigating and blocking abuse;</li>
+<li>understand in aggregate how the Service is used, for example which movies are watched and for how long, so we can keep it running well;</li>
+<li>check access keys for private titles;</li>
+<li>reply to messages you send us; and</li>
+<li>comply with the law and protect our legal rights.</li>
+</ul>
+<!-- TODO(legal): confirm whether the operator keeps any block list of IP addresses or network ranges (for example firewall rules or fail2ban), and for how long. The paragraph below is drafted conservatively so that it is not an underclaim. -->
+<p>If we have to block abusive traffic, we may keep a block-list entry for a network range, or for a specific address seen during an active attack, for as long as the block is needed.</p>
+<p>If the EU or UK General Data Protection Regulation (GDPR) applies to you, our legal basis for this processing is our legitimate interests (Article 6(1)(f)) in operating a free service securely and preventing abuse. We limit the impact on you by truncating IP addresses and deleting logs quickly. Where we must process data to meet a legal obligation, that obligation is the legal basis.</p>
+</section>
+
+<section id="retention">
+<h2>7. How long we keep it</h2>
+<ul>
+<li><strong>Full IP address held by the application:</strong> only while your stream is open. Never written to disk by the application.</li>
+<li><strong>Stream logs (system journal):</strong> up to 14 days.</li>
+<li><strong>Web server access logs:</strong> rotated and deleted within 14 days.</li>
+<li><strong>Email correspondence:</strong> as long as needed to handle your request and keep reasonable business and legal records.</li>
+<li><strong>Browser settings:</strong> on your device until you clear them.</li>
+</ul>
+<!-- TODO(legal): confirm the retention period for email correspondence and whether server backups or snapshots could extend the 14-day log retention. -->
+<p>We may keep specific records for longer if the law requires it, or if we need them to investigate a security incident or to establish, exercise or defend legal claims.</p>
+</section>
+
+<section id="providers">
+<h2>8. Infrastructure providers</h2>
+<p>We rely on a small number of companies to run the Service. They process connection data as infrastructure providers, under their own terms and privacy policies:</p>
+<ul>
+<li><strong>DigitalOcean</strong> hosts our virtual server in the United States (New York region). Network traffic to the Service, including your full IP address, necessarily passes through its network.</li>
+<li><strong>ZoneEdit</strong> runs our DNS. Your device or DNS resolver contacts it to look up our address.</li>
+<li><strong>Let's Encrypt</strong> issues our TLS certificates. Your browser or client may contact its systems to check a certificate's status.</li>
+<li><strong>Fastmail</strong> handles email sent to us.</li>
+</ul>
+<p>We do not give these providers our logs for their own use, and we use no advertising or analytics providers.</p>
+</section>
+
+<section id="disclosure">
+<h2>9. When we disclose information</h2>
+<p>We do not sell personal information. We do not share it for cross-context behavioral advertising. We have not done either in the past 12 months.</p>
+<p>We disclose information only:</p>
+<ul>
+<li>to the infrastructure providers listed above, as needed to run the Service;</li>
+<li>when we are required to by valid legal process, such as a subpoena, court order or warrant;</li>
+<li>when we believe in good faith that it is necessary to protect the security of the Service, or the rights, property or safety of Bodegga, our users or the public; or</li>
+<li>to a successor, if the Service or Bodegga is reorganized, merged or sold. This policy would continue to apply to information we had already collected.</li>
+</ul>
+<p>We respond to valid legal process. In practice we hold very little: truncated IP addresses in logs that are deleted within 14 days. We usually cannot identify an individual viewer from our records.</p>
+</section>
+
+<section id="security">
+<h2>10. Security</h2>
+<p>We protect the Service by collecting very little, offering HTTPS, and sending a strict Content-Security-Policy with the web player. Anything sent over plain <code>http://</code>, including the movie you request, is visible to networks along the way.</p>
+<p>No system is perfectly secure, and we cannot guarantee the security of the Service or of data in transit.</p>
+</section>
+
+<section id="children">
+<h2>11. Children and content</h2>
+<p>The Service is not directed to children under 13, and we do not knowingly collect personal information from children under 13. Because we have no accounts and ask for no personal details, we do not know the age of any viewer. If you believe a child has sent us personal information, for example by email, contact us and we will delete it.</p>
+<p>The movies are unrated. Some include mild cartoon violence. Viewer discretion applies.</p>
+</section>
+
+<section id="your-rights">
+<h2>12. Your privacy rights</h2>
+
+<h3>An honest limit: we usually cannot tell which records are yours</h3>
+<p>Our logs contain truncated IP addresses and no names, accounts or cookies. A truncated address is shared by many devices, so in most cases we cannot link a log line to you, and we will not collect more data just to make that possible. If you give us extra details, such as your network range and the approximate time of your visit, we will look, but we may still be unable to confirm that a record is yours. Since logs are deleted within 14 days, there is often nothing left to find. We will tell you plainly what we can and cannot do.</p>
+<p>Email is different. If you have written to us, we can find, correct or delete that correspondence on request.</p>
+
+<h3>California</h3>
+<!-- TODO(legal): confirm whether Bodegga meets the CCPA/CPRA "business" thresholds. This section is drafted to describe the rights whether or not the law applies. -->
+<p>The California Consumer Privacy Act, as amended by the CPRA, gives California residents the right to know what personal information a business collects, to obtain a copy, to correct it, to delete it, to opt out of its sale or sharing, to limit the use of sensitive personal information, and not to be discriminated against for using these rights. Whether or not that law applies to a company of our size, we describe our practices in its terms:</p>
+<ul>
+<li><strong>Categories collected:</strong> identifiers (a truncated IP address, an access key if you use one, and your email address if you write to us) and internet or other electronic network activity information (movie requested, watch duration, terminal size, user-agent, request path, timestamp).</li>
+<li><strong>Source:</strong> you and your device.</li>
+<li><strong>Purposes:</strong> those in <a href="#how-we-use">section 6</a>.</li>
+<li><strong>Sold or shared:</strong> none. This includes the information of anyone under 16.</li>
+<li><strong>Sensitive personal information:</strong> we do not collect it to infer characteristics about you.</li>
+<li><strong>Retention:</strong> as set out in <a href="#retention">section 7</a>.</li>
+</ul>
+<p>We recognize the Global Privacy Control (GPC) signal as a valid opt-out of sale and sharing. Because we do not sell or share anyone's personal information, with or without the signal, it changes nothing in practice.</p>
+
+<h3>Other US states</h3>
+<p>Other state privacy laws give similar rights to access, correct, delete and obtain a copy of personal data, and to opt out of sale, targeted advertising and certain profiling. We do none of those three things. If we decline a request, you may appeal by replying to our decision, and you may contact your state attorney general.</p>
+
+<h3>European Economic Area, United Kingdom and Switzerland</h3>
+<!-- TODO(legal): confirm whether GDPR/UK GDPR applies to this Service and, if so, whether an EU and/or UK representative (Article 27) is required, whether a legitimate interests assessment should be documented, and what transfer mechanism covers the US-based providers. -->
+<p>Bodegga is the controller of the personal data described here. Where the GDPR or UK GDPR applies, you have the right to request access, rectification, erasure, restriction and portability, and the right to object to processing based on legitimate interests. Where we cannot identify you from the data we hold, these rights apply only if you provide additional information that makes identification possible (Article 11). You also have the right to complain to your local data protection authority.</p>
+
+<h3>How to make a request</h3>
+<p>Email <a href="mailto:admin@bodegga.net">admin@bodegga.net</a> and tell us what you are asking for and where you live. You may use an authorized agent; we may ask for proof of their authority. We will ask only for the information we need to handle the request, and we will not treat you differently for making one. We aim to respond within 30 days and, in any case, within the time the applicable law allows.</p>
+</section>
+
+<section id="international">
+<h2>13. Where data is processed</h2>
+<p>Our server is in the United States. If you use the Service from another country, your connection data is processed in the United States, where privacy laws may differ from those where you live.</p>
+</section>
+
+<section id="changes">
+<h2>14. Changes to this policy</h2>
+<p>We may update this policy. We will post the new version on this page and change the "Last updated" date. We have no way to contact viewers directly, so please check back.</p>
+</section>
+
+<section id="contact">
+<h2>15. Contact</h2>
+<ul>
+<li>Privacy questions and requests: <a href="mailto:admin@bodegga.net">admin@bodegga.net</a></li>
+<li>Copyright, abuse and DMCA notices: <a href="mailto:abuse@bodegga.net">abuse@bodegga.net</a></li>
+</ul>
+<p>See also our <a href="/terms">Terms of Use</a>.</p>
+</section>
+</main>
+
+<footer class="doc-foot">
+<p><a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms of Use</a></p>
+<p>Last updated: November 17, 2026.</p>
+</footer>
+</body>
+</html>

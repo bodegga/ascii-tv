@@ -1,3 +1,3 @@
-module github.com/martinraison/ascii-tv
+module github.com/bodegga/ascii-tv
 
-go 1.11
+go 1.24

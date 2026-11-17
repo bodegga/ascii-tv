@@ -1,0 +1,12 @@
+{
+  "default": "starwars",
+  "movies": [
+    {
+      "slug": "starwars",
+      "title": "Star Wars: Episode IV",
+      "year": "1977",
+      "credit": "ASCIImation hand-drawn by Simon Jansen, asciimation.co.nz",
+      "renditions": [{ "file": "sw1.txt", "height": 13 }]
+    }
+  ]
+}

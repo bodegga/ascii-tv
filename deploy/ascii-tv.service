@@ -1,0 +1,46 @@
+[Unit]
+Description=ascii-tv: movies drawn in text (tv.bodegga.net)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/ascii-tv/ascii-tv \
+  -addr 127.0.0.1:8090 \
+  -trust-proxy \
+  -public-url tv.bodegga.net \
+  -catalog /opt/ascii-tv/resources/catalog.json \
+  -catalog /var/lib/ascii-tv/movies/catalog.private.json
+# ASCII_TV_KEYS=key1,key2 (private screening keys). Optional file.
+EnvironmentFile=-/etc/ascii-tv/env
+Environment=GOMEMLIMIT=96MiB
+Restart=on-failure
+RestartSec=2
+
+# Sandboxing: the server only needs to read its files and bind a loopback port.
+DynamicUser=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+MemoryMax=192M
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target
