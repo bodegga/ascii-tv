@@ -41,8 +41,8 @@ if [ "$UPLOAD_MOVIES" = 1 ]; then
   echo "==> Uploading private movies (compressed stream; this takes a few minutes)"
   [ -f movies/catalog.private.json ] || { echo "movies/catalog.private.json missing" >&2; exit 1; }
   # List files explicitly: --exclude='.*' would also exclude "." itself.
-  (cd movies && tar czf - catalog.private.json $(ls *.txt)) |
-    "${SSH[@]}" 'mkdir -p /var/lib/ascii-tv/movies.new && tar xzf - -C /var/lib/ascii-tv/movies.new &&
+  (cd movies && tar cf - catalog.private.json $(ls *.txt *.atv 2>/dev/null)) |
+    "${SSH[@]}" 'rm -rf /var/lib/ascii-tv/movies.new && mkdir -p /var/lib/ascii-tv/movies.new && tar xf - -C /var/lib/ascii-tv/movies.new &&
                  rm -rf /var/lib/ascii-tv/movies.old && { [ -d /var/lib/ascii-tv/movies ] && mv /var/lib/ascii-tv/movies /var/lib/ascii-tv/movies.old || true; } &&
                  mv /var/lib/ascii-tv/movies.new /var/lib/ascii-tv/movies && rm -rf /var/lib/ascii-tv/movies.old'
 fi

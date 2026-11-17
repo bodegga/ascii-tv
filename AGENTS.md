@@ -16,6 +16,7 @@ that works on phones, subtitles, and screen-reader support.
 |---|---|
 | `main.go` | flags, catalogue loading, HTTP server lifecycle |
 | `movie.go` | movie file parser and on-disk frame index, renditions, catalogue |
+| `pack.go` | `.atv` compressed movie packs (per-frame DEFLATE), colour stripping |
 | `server.go` | routes, terminal/browser detection, playback loop, live channel, limits, keys |
 | `web/` | embedded site: `index.html`, `styles.css`, `app.js`, `privacy.html`, `terms.html` |
 | `resources/` | public movies (`sw1.txt`) and `catalog.json` |
@@ -28,7 +29,7 @@ that works on phones, subtitles, and screen-reader support.
 ## Hard rules
 
 - **Standard library only** for the Go server. No modules in `go.sum`.
-- **Strictly black and white** in the web UI, the Bodegga house style. Greys are fine, colour is not.
+- **Strictly black and white** UI chrome (Bodegga house style). Movie pictures may be in colour: that's content, not chrome.
 - **No third-party scripts, fonts or CDNs.** The CSP is `default-src 'self'`. No inline `<script>` or `style=` attributes.
 - **Privacy claims must stay true.** `/privacy` promises truncated IPs in logs (`anonIP`), no query strings in nginx logs, 14-day retention, no cookies, and no analytics. If you change logging, update `web/privacy.html` in the same change.
 - **Never commit movies you lack rights to publish, or secrets.** Private films and screening keys live in `movies/` (ignored). Private titles must 404 exactly like missing ones.

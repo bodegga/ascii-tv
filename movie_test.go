@@ -113,7 +113,7 @@ func TestPickRendition(t *testing.T) {
 		want       *Rendition
 	}{{0, 0, small}, {100, 0, small}, {200, 0, big}, {200, 30, small}, {200, 50, big}}
 	for _, c := range cases {
-		if got := m.Pick(c.cols, c.rows, 1); got != c.want {
+		if got := m.Pick(c.cols, c.rows, 1, ""); got != c.want {
 			t.Errorf("Pick(%d,%d) got width %d", c.cols, c.rows, got.Width)
 		}
 	}

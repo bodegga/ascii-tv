@@ -39,6 +39,8 @@ Paths and options:
 |---|---|
 | `?t=12:30`, `?t=90`, `?t=1h2m` | start part-way through |
 | `?cols=N&rows=N` | centre the picture, and pick the sharpest version of the movie that fits |
+| `?style=ascii` | classic text characters instead of HD colour pixels |
+| `?color=0` | black and white |
 | `?bar=0` | hide the progress bar |
 | `?loop` | play forever |
 | `?format=plain` | no escape codes; frames separated by form feeds (`\f`). The web player uses this. |
@@ -59,6 +61,7 @@ Stop with <kbd>Ctrl</kbd>+<kbd>C</kbd>. If your cursor stays hidden afterwards, 
 
 **New**
 
+- **HD colour.** Films can ship an HD rendition built from `▀` half-blocks in 256 colours: two pixels per character cell, so it looks like video, and it works in any modern terminal. There's also a colour-text style, and `?color=0` for the 1990s look. Use `curl --compressed` for HD: it uses about 6× less data.
 - **Web player.** Works on phones, with keyboard controls (Space, ←/→, F, C, +/−), seeking, text size, full screen, and `prefers-reduced-motion` support. It uses the same stream as curl.
 - **Subtitles.** There's no audio, so the converter burns subtitles into the bottom rows. The web player mirrors them into a screen-reader live region and can toggle them.
 - **More than one movie.** A JSON catalogue, plus private titles unlocked with a screening key (`Authorization: Bearer …`). Private titles are invisible without the key, and 404 exactly like missing ones.
@@ -106,8 +109,9 @@ Flags:
 You need ffmpeg and Python 3 with numpy (`winget install Gyan.FFmpeg`, `pip install numpy`).
 
 ```sh
-python tools/convert.py input.mkv movies/mymovie-80.txt  --width 80  --max-rows 23 --subs auto
-python tools/convert.py input.mkv movies/mymovie-160.txt --width 160 --max-rows 48 --subs auto
+python tools/convert.py input.mkv movies/mymovie-80.atv    --color --width 80 --max-rows 23 --subs auto
+python tools/convert.py input.mkv movies/mymovie-hd80.atv  --style hd --width 80  --max-rows 23 --subs auto
+python tools/convert.py input.mkv movies/mymovie-hd160.atv --style hd --width 160 --max-rows 48 --subs auto
 ```
 
 The converter crops letterbox bars, corrects for tall terminal characters, smooths contrast
@@ -124,8 +128,9 @@ Then add it to a catalogue (paths are relative to the catalogue file):
     "slug": "mymovie", "title": "My Movie", "year": "2024",
     "credit": "Who made it", "captionLines": 2, "private": true,
     "renditions": [
-      { "file": "mymovie-80.txt",  "height": 23 },
-      { "file": "mymovie-160.txt", "height": 48 }
+      { "file": "mymovie-80.atv",    "height": 23 },
+      { "file": "mymovie-hd80.atv",  "height": 23 },
+      { "file": "mymovie-hd160.atv", "height": 48 }
     ]
   }]
 }
@@ -138,7 +143,12 @@ go run . -catalog resources/catalog.json -catalog movies/catalog.private.json
 **Only publish movies you have the rights to share.** Mark anything else `"private": true` so it
 needs a screening key. `movies/` is git-ignored.
 
-### Movie file format
+### Movie file formats
+
+**`.atv` packs** (what the converter writes for colour and HD): `ATV1
+`, a JSON header line (`width`, `height`, `style`, `color`), then per frame a uvarint duration, a uvarint size and that many bytes of raw DEFLATE holding the frame's text. Each frame is compressed separately so the server can still seek. See [pack.go](pack.go).
+
+**Text** (the original format, still supported):
 
 Each frame is one line holding a whole number (how long to show the frame, in 1/15 s), followed
 by exactly `height` lines of art. LF or CRLF endings both work. ANSI colour codes inside art lines

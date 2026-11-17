@@ -3,11 +3,13 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -282,8 +284,12 @@ func (s *server) writeMenu(w http.ResponseWriter, r *http.Request) {
     t=1h2m | t=12:30    start part-way through
     cols=N&rows=N       centre the picture and pick the sharpest size that fits
                           bash/zsh:   curl -s "%[1]s/starwars?cols=$COLUMNS&rows=$LINES"
+    style=ascii         classic text characters instead of HD colour pixels
+    color=0             black and white
     bar=0               hide the progress bar
     loop                play forever
+
+  TIP  add --compressed for HD:  curl --compressed -sN %[1]s/starwars  (uses ~6x less data)
 
   Windows PowerShell: type curl.exe (not curl).   Stop with Ctrl+C.
   Cursor gone after stopping? Type  tput cnorm  (macOS/Linux) or open a new tab.
@@ -353,13 +359,14 @@ type playItem struct {
 }
 
 type playOpts struct {
-	start  int64 // ticks
-	cols   int
-	rows   int
-	bar    bool
-	loop   bool
-	plain  bool // web player: frames separated by \f, no escape codes
-	accept string
+	start int64 // ticks
+	cols  int
+	rows  int
+	bar   bool
+	loop  bool
+	plain bool   // web player: frames separated by \f
+	color bool   // keep ANSI colour (terminal default on; web asks with color=1)
+	style string // "hd", "ascii" or "" (movie default)
 }
 
 func parseOpts(r *http.Request) playOpts {
@@ -377,6 +384,21 @@ func parseOpts(r *http.Request) playOpts {
 	}
 	_, o.loop = q["loop"]
 	o.plain = q.Get("format") == "plain"
+	switch q.Get("color") {
+	case "0", "false", "off", "no":
+		o.color = false
+	case "1", "true", "on", "yes":
+		o.color = true
+	default:
+		o.color = !o.plain
+	}
+	switch s := q.Get("style"); s {
+	case "hd", "ascii":
+		o.style = s
+	}
+	if !o.color && o.style == "" {
+		o.style = "ascii" // half-blocks are meaningless without colour
+	}
 	return o
 }
 
@@ -467,6 +489,14 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request, items []playItem
 	h.Set("Content-Type", "text/plain; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Accel-Buffering", "no") // tell nginx not to buffer
+	h.Add("Vary", "Accept-Encoding")
+	// Browsers always accept gzip and `curl --compressed` does too. HD colour
+	// frames shrink ~8x, which matters on phones. Plain curl gets raw bytes.
+	var gz *gzip.Writer
+	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		h.Set("Content-Encoding", "gzip")
+		gz, _ = gzip.NewWriterLevel(w, gzip.BestSpeed)
+	}
 	w.WriteHeader(http.StatusOK)
 
 	started := time.Now()
@@ -475,13 +505,20 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request, items []playItem
 		slug = "live"
 	}
 	s.log.Info("stream start", "movie", slug, "net", anonIP(ip), "plain", o.plain, "cols", o.cols, "rows", o.rows)
-	err := s.play(r.Context(), w, items, o)
+	err := s.play(r.Context(), w, gz, items, o)
+	if gz != nil {
+		gz.Close()
+	}
 	s.log.Info("stream end", "movie", slug, "net", anonIP(ip), "watched", time.Since(started).Round(time.Second), "err", err)
 }
 
-func (s *server) play(ctx context.Context, w http.ResponseWriter, items []playItem, o playOpts) error {
+func (s *server) play(ctx context.Context, w http.ResponseWriter, gz *gzip.Writer, items []playItem, o playOpts) error {
 	rc := http.NewResponseController(w)
-	bw := bufio.NewWriterSize(w, writeBufLen)
+	var dst io.Writer = w
+	if gz != nil {
+		dst = gz
+	}
+	bw := bufio.NewWriterSize(dst, writeBufLen)
 	var frame bytes.Buffer
 	next := time.Now()
 	first := true
@@ -490,6 +527,11 @@ func (s *server) play(ctx context.Context, w http.ResponseWriter, items []playIt
 		_ = rc.SetWriteDeadline(time.Now().Add(s.cfg.frameWriteT))
 		if err := bw.Flush(); err != nil {
 			return err
+		}
+		if gz != nil {
+			if err := gz.Flush(); err != nil {
+				return err
+			}
 		}
 		return rc.Flush()
 	}
@@ -506,18 +548,23 @@ func (s *server) play(ctx context.Context, w http.ResponseWriter, items []playIt
 			if o.bar {
 				reserve = 1
 			}
-			rend := it.movie.Pick(o.cols, o.rows, reserve)
+			rend := it.movie.Pick(o.cols, o.rows, reserve, o.style)
 			for i := rend.FrameAt(it.startTick); i < rend.Frames(); i++ {
 				lines, dur, err := rend.ReadFrame(i)
 				if err != nil {
 					return err
 				}
+				if rend.Color && !o.color {
+					lines = stripANSI(lines)
+				}
 				frame.Reset()
 				elapsed := rend.StartTick(i)
 				if o.plain {
-					fmt.Fprintf(&frame, "@%d %s\n", elapsed*int64(Tick/time.Millisecond), it.movie.Slug)
+					// Header: position in ms, movie, and the rendition actually
+					// sent, so the web player knows how to draw it.
+					fmt.Fprintf(&frame, "@%d %s %s %d %d\n", elapsed*int64(Tick/time.Millisecond), it.movie.Slug, rend.Style, rend.Width, rend.Height)
 					for _, l := range lines {
-						frame.WriteString(ansiRE.ReplaceAllString(l, ""))
+						frame.WriteString(l)
 						frame.WriteByte('\n')
 					}
 					frame.WriteByte('\f')

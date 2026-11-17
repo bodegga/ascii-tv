@@ -29,6 +29,8 @@
   let scale = parseFloat(store.get('scale') || '1');
   let lastCaption = '';
   let seeking = false;
+  let style = store.get('style') || '';   // '' = movie default (HD when available)
+  let frameW = 0, frameH = 0, frameStyle = 'ascii';
 
   const fmt = (s) => {
     s = Math.max(0, Math.floor(s));
@@ -42,6 +44,96 @@
     return k ? { Authorization: 'Bearer ' + k } : {};
   };
 
+
+  // ---- colour --------------------------------------------------------------
+  // Frames carry 256-colour ANSI. HD frames are upper-half blocks: each cell is
+  // two pixels (fg on top, bg below) and render to a canvas. Colour text frames
+  // render as spans with .f<n> classes (inline styles are blocked by our CSP).
+
+  const PALETTE = (() => {
+    const p = [[0,0,0],[205,0,0],[0,205,0],[205,205,0],[0,0,238],[205,0,205],[0,205,205],[229,229,229],
+      [127,127,127],[255,0,0],[0,255,0],[255,255,0],[92,92,255],[255,0,255],[0,255,255],[255,255,255]];
+    const v = [0, 95, 135, 175, 215, 255];
+    for (let r = 0; r < 6; r++) for (let g = 0; g < 6; g++) for (let b = 0; b < 6; b++) p.push([v[r], v[g], v[b]]);
+    for (let i = 0; i < 24; i++) { const c = 8 + 10 * i; p.push([c, c, c]); }
+    return p;
+  })();
+  const SGR = /\x1b\[([0-9;]*)m/g;
+  const stripAnsi = (s) => s.replace(SGR, '');
+
+  // Parse one line into runs of {text, fg, bg} (fg/bg are palette indexes or -1).
+  function runs(line) {
+    const out = [];
+    let fg = -1, bg = -1, last = 0, m;
+    SGR.lastIndex = 0;
+    while ((m = SGR.exec(line))) {
+      if (m.index > last) out.push({ text: line.slice(last, m.index), fg, bg });
+      const p = m[1] === '' ? [0] : m[1].split(';').map(Number);
+      for (let i = 0; i < p.length; i++) {
+        if (p[i] === 0) { fg = -1; bg = -1; }
+        else if (p[i] === 38 && p[i + 1] === 5) { fg = p[i + 2]; i += 2; }
+        else if (p[i] === 48 && p[i + 1] === 5) { bg = p[i + 2]; i += 2; }
+        else if (p[i] === 39) fg = -1;
+        else if (p[i] === 49) bg = -1;
+      }
+      last = SGR.lastIndex;
+    }
+    if (last < line.length) out.push({ text: line.slice(last), fg, bg });
+    return out;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.className = 'hd';
+  canvas.setAttribute('aria-hidden', 'true');
+  canvas.hidden = true;
+  el.screen.append(canvas);
+  const ctx2d = canvas.getContext('2d', { alpha: false });
+  let image = null;
+
+  function paintHD(lines, w) {
+    const h = lines.length * 2;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w; canvas.height = h;
+      image = ctx2d.createImageData(w, h);
+    }
+    const d = image.data;
+    d.fill(0);
+    for (let y = 0; y < lines.length; y++) {
+      let x = 0;
+      for (const r of runs(lines[y])) {
+        for (const ch of r.text) {
+          if (x >= w) break;
+          const top = ch === '▀' ? r.fg : r.bg;
+          const bot = r.bg;
+          const t = PALETTE[top < 0 ? 0 : top], b = PALETTE[bot < 0 ? 0 : bot];
+          let i = ((y * 2) * w + x) * 4;
+          d[i] = t[0]; d[i + 1] = t[1]; d[i + 2] = t[2]; d[i + 3] = 255;
+          i += w * 4;
+          d[i] = b[0]; d[i + 1] = b[1]; d[i + 2] = b[2]; d[i + 3] = 255;
+          x++;
+        }
+      }
+      for (let i = ((y * 2) * w + x) * 4; i < ((y * 2 + 2) * w) * 4; i += 4) d[i + 3] = 255;
+    }
+    ctx2d.putImageData(image, 0, 0);
+  }
+
+  const escHTML = (s) => s.replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
+  function paintText(lines) {
+    if (!lines.some((l) => l.includes('\x1b'))) { el.frame.textContent = lines.join('\n'); return; }
+    let html = '';
+    for (const line of lines) {
+      for (const r of runs(line)) html += r.fg < 0 ? escHTML(r.text) : `<span class="f${r.fg}">${escHTML(r.text)}</span>`;
+      html += '\n';
+    }
+    el.frame.innerHTML = html;
+  }
+
+  function setMode(hd) {
+    canvas.hidden = !hd;
+    el.frame.hidden = hd;
+  }
+
   // ---- fitting the picture -------------------------------------------------
 
   let charRatio = 0.6;
@@ -54,8 +146,8 @@
   })();
 
   function fit() {
-    const cols = current && current.width ? current.width : 67;
-    const rows = current && current.height ? current.height : 13;
+    const cols = frameW || (current && current.width) || 67;
+    const rows = frameH || (current && current.height) || 13;
     const box = el.screen.getBoundingClientRect();
     const pad = parseFloat(getComputedStyle(el.screen).paddingLeft) * 2;
     const availW = box.width - pad;
@@ -64,6 +156,14 @@
     size = Math.min(size, availH / (rows * 1.15));
     size = Math.max(4, Math.min(size * scale, 48));
     el.frame.style.fontSize = size.toFixed(2) + 'px';
+    // HD canvas: square pixels, fit width (and height in full screen).
+    if (frameStyle === 'hd' && frameW) {
+      const ph = frameH * 2 - ((current?.captionLines || 0) * 2);
+      let cw = availW * Math.min(scale, 1);
+      if (availH !== Infinity) cw = Math.min(cw, availH * frameW / ph);
+      canvas.style.width = cw.toFixed(0) + 'px';
+      canvas.style.height = (cw * ph / frameW).toFixed(0) + 'px';
+    }
   }
   new ResizeObserver(fit).observe(el.screen);
   document.addEventListener('fullscreenchange', fit);
@@ -86,7 +186,9 @@
     stop();
     if (!current) return;
     const live = current.slug === 'live';
-    const params = new URLSearchParams({ format: 'plain', bar: '0' });
+    const params = new URLSearchParams({ format: 'plain', bar: '0', color: '1',
+      cols: String(el.screen.clientWidth >= 640 ? 999 : 80) });
+    if (style) params.set('style', style);
     if (!live && fromSec > 0) params.set('t', String(Math.floor(fromSec)));
     ctrl = new AbortController();
     const mine = ctrl;
@@ -128,8 +230,13 @@
     const nl = raw.indexOf('\n');
     const head = raw.slice(0, nl);
     const art = raw.slice(nl + 1).replace(/\n$/, '');
-    const [msStr, slug] = head.slice(1).split(' ');
+    const [msStr, slug, fStyle, fW, fH] = head.slice(1).split(' ');
     positionMs = parseInt(msStr, 10) || 0;
+    if (fStyle && (fStyle !== frameStyle || +fW !== frameW || +fH !== frameH)) {
+      frameStyle = fStyle; frameW = +fW; frameH = +fH;
+      setMode(frameStyle === 'hd');
+      fit();
+    }
 
     let lines = art.split('\n');
     const m = current && current.slug === 'live' ? movies.find((x) => x.slug === slug) : current;
@@ -141,15 +248,17 @@
       fit();
     }
     const capN = m && m.captionLines ? m.captionLines : 0;
+    const hd = frameStyle === 'hd';
     if (capN) {
-      const cap = lines.slice(-capN).map((l) => l.trim()).filter(Boolean).join(' ');
-      if (!captionsOn) lines = lines.slice(0, -capN);
+      const cap = lines.slice(-capN).map((l) => stripAnsi(l).trim()).filter(Boolean).join(' ');
+      // HD pictures can't hold text, so captions always show below them.
+      if (!captionsOn || hd) lines = lines.slice(0, -capN);
       if (cap !== lastCaption) {
         lastCaption = cap;
         el.captions.textContent = captionsOn ? cap : '';
       }
     }
-    el.frame.textContent = lines.join('\n');
+    if (hd) paintHD(lines, frameW); else paintText(lines);
     const total = (m && m.seconds) || 0;
     if (!seeking) el.seek.value = String(Math.floor(positionMs / 1000));
     el.seek.max = String(total);
@@ -242,6 +351,19 @@ ${live ? 'the live channel' : m.title}.`); }
   });
   el.cc.setAttribute('aria-pressed', String(captionsOn));
   const zoom = (f) => { scale = Math.min(2, Math.max(0.5, scale * f)); store.set('scale', scale.toFixed(2)); fit(); };
+  el.hdBtn = $('hd');
+  const syncStyleBtn = () => {
+    const on = style !== 'ascii';
+    el.hdBtn.setAttribute('aria-pressed', String(on));
+    el.hdBtn.title = on ? 'HD colour pixels (press H for text characters)' : 'Text characters (press H for HD)';
+  };
+  syncStyleBtn();
+  el.hdBtn.addEventListener('click', () => {
+    style = style === 'ascii' ? '' : 'ascii';
+    store.set('style', style || null);
+    syncStyleBtn();
+    if (playing) start(positionMs / 1000);
+  });
   el.smaller.addEventListener('click', () => zoom(1 / 1.15));
   el.bigger.addEventListener('click', () => zoom(1.15));
   el.full.addEventListener('click', () => {
@@ -262,6 +384,7 @@ ${live ? 'the live channel' : m.title}.`); }
       positionMs = t * 1000; start(t);
     } else if (k === 'f') { el.full.click(); }
     else if (k === 'c') { if (!el.cc.hidden) el.cc.click(); }
+    else if (k === 'h') { el.hdBtn.click(); }
     else if (k === '+' || k === '=') { zoom(1.15); }
     else if (k === '-') { zoom(1 / 1.15); }
   });

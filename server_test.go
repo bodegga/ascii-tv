@@ -90,7 +90,7 @@ func TestPlainFormatForWebPlayer(t *testing.T) {
 		t.Fatal("plain format must not contain escape codes")
 	}
 	frames := strings.Split(strings.TrimSuffix(body, "\f"), "\f")
-	if len(frames) != 2 || !strings.HasPrefix(frames[1], "@66 demo\nworld") {
+	if len(frames) != 2 || !strings.HasPrefix(frames[1], "@66 demo ascii 5 1\nworld") {
 		t.Fatalf("frames %q", frames)
 	}
 }

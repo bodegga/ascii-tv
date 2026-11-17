@@ -35,9 +35,12 @@ type frameRef struct {
 // fits the viewer's terminal.
 type Rendition struct {
 	Path   string
-	Width  int // widest artwork line, in terminal cells
-	Height int // artwork lines per frame
+	Width  int    // widest artwork line, in terminal cells
+	Height int    // artwork lines per frame
+	Style  string // "ascii" (characters) or "hd" (half-block pixels)
+	Color  bool   // frames carry ANSI colour
 
+	packed bool // .atv: frames are individually DEFLATE-compressed
 	file   *os.File
 	frames []frameRef
 	start  []int64 // start[i] = tick at which frame i begins
@@ -63,20 +66,44 @@ func (m *Movie) Duration() time.Duration {
 }
 
 // Pick returns the largest rendition that fits in cols x rows (reserving
-// `reserve` rows for chrome such as the status bar). Zero means unknown, and
-// unknown dimensions fall back to the smallest rendition, which is the
+// `reserve` rows for chrome such as the status bar), preferring the requested
+// style ("hd" or "ascii"; "" means the movie's best). Zero dimensions mean
+// unknown and fall back to the smallest rendition of that style, which is the
 // classic-terminal-safe choice.
-func (m *Movie) Pick(cols, rows, reserve int) *Rendition {
-	best := m.Renditions[0]
+func (m *Movie) Pick(cols, rows, reserve int, style string) *Rendition {
+	pool := m.Renditions
+	if style == "" {
+		style = m.DefaultStyle()
+	}
+	var styled []*Rendition
+	for _, r := range m.Renditions {
+		if r.Style == style {
+			styled = append(styled, r)
+		}
+	}
+	if len(styled) > 0 {
+		pool = styled
+	}
+	best := pool[0]
 	if cols <= 0 {
 		return best
 	}
-	for _, r := range m.Renditions {
+	for _, r := range pool {
 		if r.Width <= cols && (rows <= 0 || r.Height+reserve <= rows) {
 			best = r
 		}
 	}
 	return best
+}
+
+// DefaultStyle is "hd" when the movie has an HD rendition, else "ascii".
+func (m *Movie) DefaultStyle() string {
+	for _, r := range m.Renditions {
+		if r.Style == "hd" {
+			return "hd"
+		}
+	}
+	return "ascii"
 }
 
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
@@ -94,19 +121,23 @@ var ErrNoFrames = errors.New("movie file contains no complete frames")
 // partial frame is dropped (and reported via the returned warning) instead of
 // crashing the server.
 func OpenRendition(path string, height int) (r *Rendition, warning string, err error) {
-	if height < 1 {
-		return nil, "", fmt.Errorf("%s: frame height must be at least 1, got %d", path, height)
-	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, "", err
 	}
-	r = &Rendition{Path: path, Height: height, file: f}
+	if height < 1 && !isPack(f) {
+		f.Close()
+		return nil, "", fmt.Errorf("%s: frame height must be at least 1, got %d", path, height)
+	}
 	defer func() {
 		if err != nil {
 			f.Close()
 		}
 	}()
+	if isPack(f) {
+		return openPack(path, f, height)
+	}
+	r = &Rendition{Path: path, Height: height, Style: "ascii", file: f}
 
 	br := bufio.NewReaderSize(f, 1<<16)
 	var off int64
@@ -197,9 +228,17 @@ func (r *Rendition) StartTick(i int) int64 { return r.start[i] }
 // long to show it.
 func (r *Rendition) ReadFrame(i int) ([]string, time.Duration, error) {
 	fr := r.frames[i]
-	buf := make([]byte, fr.size)
-	if _, err := r.file.ReadAt(buf, fr.off); err != nil && err != io.EOF {
-		return nil, 0, err
+	var buf []byte
+	if r.packed {
+		var err error
+		if buf, err = r.readPacked(fr); err != nil {
+			return nil, 0, err
+		}
+	} else {
+		buf = make([]byte, fr.size)
+		if _, err := r.file.ReadAt(buf, fr.off); err != nil && err != io.EOF {
+			return nil, 0, err
+		}
 	}
 	buf = bytes.ReplaceAll(buf, []byte("\r"), nil)
 	lines := strings.Split(strings.TrimSuffix(string(buf), "\n"), "\n")

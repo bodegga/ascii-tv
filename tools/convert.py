@@ -25,6 +25,7 @@ import sys
 import textwrap
 import time
 import unicodedata
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -176,22 +177,23 @@ def detect_crop(video: str, duration: float) -> str | None:
     return f"{w}:{h}:{x}:{y}"
 
 
-def frames(video: str, vf: str, w: int, h: int, start: float | None, duration: float | None):
+def frames(video: str, vf: str, w: int, h: int, start: float | None, duration: float | None, rgb: bool = False):
     cmd = ["ffmpeg", "-v", "error", "-nostdin"]
     if start:
         cmd += ["-ss", str(start)]
     cmd += ["-i", video]
     if duration:
         cmd += ["-t", str(duration)]
-    cmd += ["-map", "0:v:0", "-an", "-sn", "-vf", vf, "-pix_fmt", "gray", "-f", "rawvideo", "-"]
+    cmd += ["-map", "0:v:0", "-an", "-sn", "-vf", vf, "-pix_fmt", "rgb24" if rgb else "gray", "-f", "rawvideo", "-"]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    size = w * h
+    size = w * h * (3 if rgb else 1)
     try:
         while True:
             buf = proc.stdout.read(size)
             if len(buf) < size:
                 break
-            yield np.frombuffer(buf, dtype=np.uint8).reshape(h, w)
+            a = np.frombuffer(buf, dtype=np.uint8)
+            yield a.reshape(h, w, 3) if rgb else a.reshape(h, w)
     finally:
         proc.stdout.close()
         proc.wait()
@@ -211,6 +213,9 @@ class ToneMapper:
         self.first = True
 
     def __call__(self, px: np.ndarray) -> list[bytes]:
+        return [row.tobytes() for row in self.chars(px)]
+
+    def chars(self, px: np.ndarray) -> np.ndarray:
         f = px.astype(np.float32)
         if self.auto:
             lo, hi = np.percentile(f, (1.5, 99.5))
@@ -226,8 +231,148 @@ class ToneMapper:
         if self.invert:
             f = 1 - f
         idx = np.minimum((f * self.levels).astype(np.int32), self.levels - 1)
-        chars = self.lut_chars[idx]
-        return [row.tobytes() for row in chars]
+        return self.lut_chars[idx]
+
+
+
+# ---- colour ------------------------------------------------------------------
+#
+# 256-colour ANSI (xterm palette): every modern terminal supports it, it keeps
+# files small, and the web player can render it with plain CSS classes.
+
+_CUBE = np.array([0, 95, 135, 175, 215, 255], dtype=np.int32)
+
+
+def xterm256(rgb: np.ndarray) -> np.ndarray:
+    """Map an (..., 3) uint8 RGB array to the nearest xterm-256 colour index."""
+    c = rgb.astype(np.int32)
+    lv = np.where(c < 48, 0, np.where(c < 115, 1, (c - 35) // 40)).clip(0, 5)
+    cube = 16 + 36 * lv[..., 0] + 6 * lv[..., 1] + lv[..., 2]
+    cube_err = ((c - _CUBE[lv]) ** 2).sum(-1)
+    avg = c.sum(-1) // 3
+    gi = ((avg - 8) // 10).clip(0, 23)
+    gv = (8 + 10 * gi)[..., None]
+    gray_err = ((c - gv) ** 2).sum(-1)
+    return np.where(gray_err < cube_err, 232 + gi, cube).astype(np.int32)
+
+
+def _esc_table(fmt: str) -> np.ndarray:
+    t = np.empty(256, dtype=object)
+    for n in range(256):
+        t[n] = fmt.format(n).encode()
+    return t
+
+
+FG = _esc_table("\x1b[38;5;{}m")
+BG = _esc_table("\x1b[48;5;{}m")
+FGBG = np.empty(256 * 256, dtype=object)
+for _f in range(256):
+    for _b in range(256):
+        FGBG[_f * 256 + _b] = f"\x1b[38;5;{_f};48;5;{_b}m".encode()
+CHARS = np.empty(256, dtype=object)
+for _i in range(256):
+    CHARS[_i] = bytes([_i])
+UPPER_HALF = "▀".encode()  # top half block: fg = upper pixel, bg = lower
+RESET = b"\x1b[0m"
+
+
+def _changes(codes: np.ndarray) -> np.ndarray:
+    ch = np.ones(codes.shape, dtype=bool)
+    ch[:, 1:] = codes[:, 1:] != codes[:, :-1]
+    return ch
+
+
+class Stretch:
+    """Contrast stretch on luminance, smoothed over time, applied to RGB."""
+
+    def __init__(self, auto: bool, gamma: float):
+        self.auto, self.gamma = auto, gamma
+        self.lo, self.hi, self.first = 0.0, 255.0, True
+
+    def __call__(self, rgb: np.ndarray) -> np.ndarray:
+        f = rgb.astype(np.float32)
+        if self.auto:
+            lum = f @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+            lo, hi = np.percentile(lum, (1.0, 99.5))
+            hi = max(hi, lo + 48)
+            a = 1.0 if self.first else 0.15
+            self.lo += (lo - self.lo) * a
+            self.hi += (hi - self.hi) * a
+            self.first = False
+            f = (f - self.lo) * (255.0 / max(self.hi - self.lo, 1))
+        f = np.clip(f / 255.0, 0, 1) ** self.gamma * 255.0
+        return f.astype(np.uint8)
+
+
+def _prefixes(mask_a, table_a, mask_b=None, table_b=None, both=None):
+    out = np.empty(mask_a.shape, dtype=object)
+    out.fill(b"")
+    if mask_b is not None:
+        out[mask_b] = table_b[mask_b]
+    out[mask_a] = table_a[mask_a]
+    if both is not None:
+        m, t = both
+        out[m] = t[m]
+    return out
+
+
+def render_hd(rgb: np.ndarray, stretch: Stretch) -> list[bytes]:
+    """Two pixels per character cell using the upper-half block."""
+    codes = xterm256(stretch(rgb))
+    fg, bg = codes[0::2], codes[1::2]
+    fgc, bgc = _changes(fg), _changes(bg)
+    pre = _prefixes(fgc, FG[fg], bgc, BG[bg], (fgc & bgc, FGBG[fg * 256 + bg]))
+    return [b"".join(p + UPPER_HALF for p in row) + RESET for row in pre]
+
+
+def render_color_ascii(rgb: np.ndarray, tone, stretch: Stretch) -> list[bytes]:
+    """Characters by brightness, coloured by the pixel's hue."""
+    lum = (rgb.astype(np.float32) @ np.array([0.299, 0.587, 0.114], dtype=np.float32)).astype(np.uint8)
+    chars = tone.chars(lum)
+    px = stretch(rgb).astype(np.float32)
+    # Brightness is already carried by the glyph; push colour toward full
+    # value so dim glyphs stay readable on a black terminal.
+    peak = px.max(-1, keepdims=True)
+    px = np.clip(px * (255.0 / np.maximum(peak, 1)) * 0.92, 0, 255)
+    codes = xterm256(px.astype(np.uint8))
+    # Spaces need no colour: carry the previous code over them so an escape is
+    # only emitted when a visible glyph changes colour.
+    blank = chars == 32
+    idx = np.where(blank, 0, np.arange(codes.shape[1])[None, :])
+    idx = np.maximum.accumulate(idx, axis=1)
+    codes = np.take_along_axis(codes, idx, axis=1)
+    pre = _prefixes(_changes(codes) & ~blank, FG[codes])
+    rows = []
+    for r in range(chars.shape[0]):
+        cells = CHARS[chars[r]]
+        rows.append(b"".join(p + c for p, c in zip(pre[r], cells)).rstrip(b" ") + RESET)
+    return rows
+
+
+class PackWriter:
+    """Writes the .atv format the server reads (see pack.go)."""
+
+    def __init__(self, f, width: int, height: int, style: str, color: bool):
+        self.f = f
+        f.write(b"ATV1\n")
+        f.write(json.dumps({"width": width, "height": height, "style": style, "color": color}).encode() + b"\n")
+
+    @staticmethod
+    def _uvarint(n: int) -> bytes:
+        out = bytearray()
+        while True:
+            b = n & 0x7F
+            n >>= 7
+            if n:
+                out.append(b | 0x80)
+            else:
+                out.append(b)
+                return bytes(out)
+
+    def frame(self, art: bytes, ticks: int):
+        c = zlib.compressobj(6, zlib.DEFLATED, -15)
+        z = c.compress(art) + c.flush()
+        self.f.write(self._uvarint(ticks) + self._uvarint(len(z)) + z)
 
 
 # ---- main ----------------------------------------------------------------------
@@ -252,9 +397,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--sub-lines", type=int, default=2, help="rows reserved for subtitles (default 2)")
     p.add_argument("--start", type=float, help="start at this many seconds (for clips and tests)")
     p.add_argument("--duration", type=float, help="convert only this many seconds")
+    p.add_argument("--style", choices=["ascii", "hd"], default="ascii",
+                   help="ascii: characters (default). hd: colour half-block pixels, twice the vertical detail")
+    p.add_argument("--color", action="store_true", help="colour the ascii style (hd is always colour)")
+    p.add_argument("--pack", action="store_true",
+                   help="write a compressed .atv pack (implied by a .atv output name); use it for colour")
     p.add_argument("--quiet", action="store_true")
     a = p.parse_args(argv)
 
+    if a.output.endswith(".atv"):
+        a.pack = True
+    color = a.color or a.style == "hd"
     ramp = RAMPS.get(a.ramp, a.ramp)
     if len(ramp) < 2 or not ramp.isascii():
         p.error("--ramp needs at least two ASCII characters")
@@ -298,12 +451,14 @@ def main(argv: list[str] | None = None) -> int:
     if crop:
         vf.append(f"crop={crop}")
     vf.append(f"fps={a.fps}")
-    vf.append(f"scale={scaled_w}:{scaled_h}:flags=area")
+    py = 2 if a.style == "hd" else 1  # hd: two pixel rows per text row
+    vf.append(f"scale={scaled_w}:{scaled_h * py}:flags=area")
     if (scaled_w, scaled_h) != (a.width, rows):
-        vf.append(f"crop={a.width}:{rows}")
+        vf.append(f"crop={a.width}:{rows * py}")
     vf = ",".join(vf)
 
     tone = ToneMapper(ramp, a.invert, a.gamma, not a.no_auto_contrast)
+    stretch = Stretch(not a.no_auto_contrast, a.gamma)
     subs = SubtitleTrack(cues, a.width, sub_lines) if sub_lines else None
     ticks_per_frame = TICKS_PER_SECOND // a.fps
     t0 = a.start or 0.0
@@ -317,8 +472,14 @@ def main(argv: list[str] | None = None) -> int:
     prev: bytes | None = None
     prev_ticks = 0
     with open(tmp, "wb") as out:
+        packer = PackWriter(out, a.width, rows + sub_lines, a.style, color) if a.pack else None
+
         def emit(art: bytes, ticks: int):
             nonlocal written
+            if packer:
+                packer.frame(art, ticks)
+                written += 1
+                return
             # Very long holds are split so the duration field stays small.
             while ticks > 0:
                 step = min(ticks, 9999)
@@ -327,11 +488,16 @@ def main(argv: list[str] | None = None) -> int:
                 written += 1
                 ticks -= step
 
-        for px in frames(a.input, vf, a.width, rows, a.start, a.duration):
-            lines = tone(px)
+        for px in frames(a.input, vf, a.width, rows * py, a.start, a.duration, rgb=color):
+            if a.style == "hd":
+                lines = render_hd(px, stretch)
+            elif color:
+                lines = render_color_ascii(px, tone, stretch)
+            else:
+                lines = tone(px)
             if subs:
                 lines += [s.encode("ascii") for s in subs.at(t0 + n / a.fps)]
-            art = b"\n".join(l.rstrip() for l in lines) + b"\n"
+            art = b"\n".join(lines if color else [l.rstrip() for l in lines]) + b"\n"
             if art == prev:
                 prev_ticks += ticks_per_frame
             else:
