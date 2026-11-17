@@ -42,7 +42,7 @@ if [ "$UPLOAD_MOVIES" = 1 ]; then
   [ -f movies/catalog.private.json ] || { echo "movies/catalog.private.json missing" >&2; exit 1; }
   # The Droplet's disk can't always hold the old and new sets at once. If not,
   # drop the old set first (private titles are unavailable during the upload).
-  NEED=$(( $(cat movies/*.atv movies/*.txt 2>/dev/null | wc -c) + 512*1024*1024 ))
+  NEED=$(( $( (cat movies/*.atv movies/*.txt 2>/dev/null || true) | wc -c) + 512*1024*1024 ))
   "${SSH[@]}" NEED="$NEED" 'bash -s' <<'SPACE'
 AVAIL=$(df --output=avail -B1 /var/lib/ascii-tv | tail -1)
 if [ "$AVAIL" -lt "$NEED" ]; then
